@@ -9,15 +9,20 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Ejecutar despliegue en servidor via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd ~/estudio3d-backend
+      - name: Ejecutar despliegue vía SSH nativo
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ${{ secrets.EC2_USERNAME }}
+        run: |
+          mkdir -p ~/.ssh
+          printf "%s\n" "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H $HOST >> ~/.ssh/known_hosts
+          ssh $USER@$HOST << 'EOF'
+            cd ~/estudio3d-backend || exit 1
             git pull origin main
             sudo docker build -t estudio3d-app .
             sudo docker rm -f estudio3d-container || true
             sudo docker run -d -p 8080:8080 -e PORT=8080 --env-file .env --name estudio3d-container estudio3d-app
+          EOF
