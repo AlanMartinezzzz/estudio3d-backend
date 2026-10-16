@@ -1,0 +1,23 @@
+name: Deploy Automático a AWS EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ejecutar despliegue en servidor via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/estudio3d-backend
+            git pull origin main
+            sudo docker build -t estudio3d-app .
+            sudo docker rm -f estudio3d-container || true
+            sudo docker run -d -p 8080:8080 -e PORT=8080 --env-file .env --name estudio3d-container estudio3d-app
