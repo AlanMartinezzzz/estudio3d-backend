@@ -1,0 +1,14 @@
+# Ocultar contrasenas y llaves de acceso (Super importante!)
+.env
+
+# Ignorar las carpetas de entornos virtuales de Python
+venv/
+env/
+
+# Ignorar archivos temporales que crea Python automaticamente
+__pycache__/
+*.pyc
+
+# Ignorar archivos del sistema operativo
+.DS_Store
+Thumbs.db

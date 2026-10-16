@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estudio 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<!-- Supabase con versión fija (evita que un cambio futuro rompa la página) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
+
+<!-- Rutas relativas: funcionan con Flask (localhost:8080), Live Server y Cloud Run -->
+<link rel="stylesheet" href="static/styles.css">
+</head>
+<body>
+
+<!-- ================= LANDING ================= -->
+<div id="landing">
+  <nav class="topnav">
+    <div class="brand"><div class="brand-mark"><span></span><span></span><span></span></div>Estudio 3D</div>
+    <div class="navlinks">
+      <a href="#funciones">Funciones</a>
+      <a href="#como-funciona">Cómo funciona</a>
+    </div>
+    <div class="navcta">
+      <button class="btn btn-primary" onclick="enterApp()">Entrar</button>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="eyebrow"><span class="dot"></span> COTIZACIÓN AUTOMÁTICA DE ARCHIVOS .STL</div>
+    <h1>Tu impresora 3D, <span class="accent">capa por capa</span>, más rápido.</h1>
+    <p class="sub">Sube un modelo, obtén el precio al instante y deja que Estudio 3D lleve el registro de cotizaciones, pedidos y ventas por ti.</p>
+    <div class="hero-ctas">
+      <button class="btn btn-primary" onclick="enterApp('cliente')">Cotizar una pieza →</button>
+    </div>
+
+    <div class="printer-stage">
+      <svg id="printerSvg" viewBox="0 0 640 340" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="metalGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#3a463d"/><stop offset="45%" stop-color="#232b23"/><stop offset="100%" stop-color="#12160f"/>
+          </linearGradient>
+          <linearGradient id="metalGradH" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#12160f"/><stop offset="50%" stop-color="#3f4c40"/><stop offset="100%" stop-color="#12160f"/>
+          </linearGradient>
+          <linearGradient id="objGrad" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0%" stop-color="#0e3322"/><stop offset="55%" stop-color="#1f8f57"/><stop offset="100%" stop-color="#8fe3b4"/>
+          </linearGradient>
+          <radialGradient id="backGlow" cx="50%" cy="12%" r="75%">
+            <stop offset="0%" stop-color="#1c3324" stop-opacity="0.9"/><stop offset="100%" stop-color="#0a0c0a" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="bedGlow" cx="50%" cy="0%" r="80%">
+            <stop offset="0%" stop-color="#2fae6b" stop-opacity="0.35"/><stop offset="100%" stop-color="#2fae6b" stop-opacity="0"/>
+          </radialGradient>
+          <pattern id="gridPattern" width="24" height="24" patternUnits="userSpaceOnUse">
+            <path d="M24 0H0V24" fill="none" stroke="#161c15" stroke-width="1"/>
+          </pattern>
+          <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
+            <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#000" flood-opacity="0.5"/>
+          </filter>
+          <clipPath id="objClip"><rect id="objClipRect" x="240" y="280" width="160" height="0"/></clipPath>
+        </defs>
+        <rect x="0" y="0" width="640" height="340" fill="url(#backGlow)"/>
+        <rect x="0" y="0" width="640" height="340" fill="url(#gridPattern)" opacity="0.6"/>
+        <rect x="135" y="292" width="38" height="8" rx="3" fill="url(#metalGrad)"/>
+        <rect x="467" y="292" width="38" height="8" rx="3" fill="url(#metalGrad)"/>
+        <rect x="150" y="30" width="9" height="262" rx="3" fill="url(#metalGrad)" filter="url(#softShadow)"/>
+        <rect x="481" y="30" width="9" height="262" rx="3" fill="url(#metalGrad)" filter="url(#softShadow)"/>
+        <rect x="150" y="22" width="340" height="12" rx="4" fill="url(#metalGradH)"/>
+        <g transform="translate(465,54)">
+          <circle r="20" fill="#171d16" stroke="#3a463d" stroke-width="2"/>
+          <circle r="7" fill="#0a0c0a" stroke="#3a463d" stroke-width="2"/>
+          <path d="M -18,-4 A18,18 0 0,1 -4,-18" stroke="var(--green)" stroke-width="3" fill="none" opacity="0.85"/>
+          <path d="M 4,-18 A18,18 0 0,1 18,-4" stroke="var(--green)" stroke-width="3" fill="none" opacity="0.5"/>
+        </g>
+        <rect x="186" y="280" width="268" height="12" rx="4" fill="url(#metalGrad)" filter="url(#softShadow)"/>
+        <rect x="192" y="284" width="256" height="4" rx="2" fill="var(--green)" opacity="0.4"/>
+        <ellipse cx="320" cy="298" rx="170" ry="16" fill="url(#bedGlow)"/>
+        <polygon id="objShape" clip-path="url(#objClip)" fill="url(#objGrad)" stroke="#062015" stroke-width="1.5" points=""/>
+        <polygon id="objShine" clip-path="url(#objClip)" points="302,278 310,90 320,90 314,278" fill="#eafff2" opacity="0.18"/>
+        <g id="gantryGroup">
+          <rect x="150" y="-4" width="340" height="8" rx="3" fill="url(#metalGradH)" filter="url(#softShadow)"/>
+          <g id="printHead">
+            <rect x="-17" y="-12" width="34" height="18" rx="4" fill="url(#metalGrad)"/>
+            <rect x="-17" y="-12" width="34" height="5" rx="2" fill="#4a5a4c" opacity="0.6"/>
+            <circle cx="0" cy="-3" r="2" fill="#7fe3a8"/>
+            <polygon class="nozzle-tip" points="-6,6 6,6 0,20" fill="var(--green)"/>
+          </g>
+        </g>
+      </svg>
+      <div class="printer-readout">
+        <span id="printStatus"><span class="rec"></span>Imprimiendo maceta_geometrica.stl</span>
+        <span id="printPct">0%</span>
+      </div>
+      <div class="printer-progress"><div id="printBar"></div></div>
+    </div>
+  </header>
+
+  <section class="section" id="funciones">
+    <div class="section-head"><div class="k">Dos interfaces, un solo flujo</div><h2>Hecho para el tiempo, no en su contra</h2></div>
+    <div class="grid3">
+      <div class="card"><div class="icon">◆</div><h3>Cotizador instantáneo</h3><p>Sube el .STL y el sistema calcula volumen, peso estimado y tiempo de impresión al momento.</p></div>
+      <div class="card"><div class="icon">▤</div><h3>Carrito y catálogo</h3><p>El cliente guarda sus archivos aprobados, agrega productos al carrito y confirma su pedido.</p></div>
+      <div class="card"><div class="icon">✎</div><h3>Control total del negocio</h3><p>Precios, filamentos, cámaras y ventas — todo en un panel con indicadores en tiempo real.</p></div>
+    </div>
+  </section>
+
+  <!-- NUEVO: la sección a la que apuntaba el enlace "Cómo funciona" (antes no existía) -->
+  <section class="section" id="como-funciona">
+    <div class="section-head"><div class="k">Flujo del cliente</div><h2>De archivo a pedido en 3 pasos</h2></div>
+    <div class="grid3">
+      <div class="card"><div class="icon">1</div><h3>Sube tu archivo</h3><p>Arrastra tu .STL y el sistema mide el modelo automáticamente.</p></div>
+      <div class="card"><div class="icon">2</div><h3>Elige material y color</h3><p>Selecciona filamento e infill; el precio se recalcula en vivo.</p></div>
+      <div class="card"><div class="icon">3</div><h3>Confirma tu pedido</h3><p>Guarda el archivo o agrégalo al carrito y confirma con un clic.</p></div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <span>Estudio 3D · Prototipo de presentación</span>
+    <span>Python · PostgreSQL · HTML/CSS/JS</span>
+  </footer>
+</div>
+
+<!-- ================= CLIENTE APP ================= -->
+<div class="app" id="app-cliente">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark"><span></span><span></span><span></span></div>Estudio 3D</div>
+    <div class="side-label">Cuenta</div>
+    <button class="side-btn active" data-view="v-perfil" onclick="showView('cliente','v-perfil', this)">Perfil</button>
+    <div class="side-label">Piezas</div>
+    <button class="side-btn" data-view="v-cotizador" onclick="showView('cliente','v-cotizador', this)">Cotizar archivo</button>
+    <button class="side-btn" data-view="v-archivos" onclick="showView('cliente','v-archivos', this)">Mis archivos</button>
+    <div class="side-label">Compras</div>
+    <button class="side-btn" data-view="v-catalogo" onclick="showView('cliente','v-catalogo', this)">Catálogo</button>
+    <button class="side-btn" data-view="v-carrito" onclick="showView('cliente','v-carrito', this)">Mi carrito <span class="cart-count" id="cartCount">0</span></button>
+    <button class="side-btn" data-view="v-pedidos" onclick="showView('cliente','v-pedidos', this)">Mis pedidos</button>
+    <div class="side-label">Soporte</div>
+    <button class="side-btn" data-view="v-contacto" onclick="showView('cliente','v-contacto', this)">Contactar negocio</button>
+    <div class="side-foot"><button class="side-btn" onclick="exitApp()">← Salir</button></div>
+  </aside>
+
+  <main class="main">
+    <div class="view active" id="v-perfil">
+      <div class="header"><div><h2>Mi perfil</h2><p>Información de tu cuenta.</p></div><span class="pill">usuario</span></div>
+      <div class="panel">
+        <div class="form-grid">
+          <div class="field"><label>Nombre</label><input id="pf-nombre" placeholder="Tu nombre"></div>
+          <div class="field"><label>Correo</label><input id="pf-correo" placeholder="tu@correo.com"></div>
+          <div class="field"><label>Teléfono</label><input id="pf-tel" placeholder="+502 0000 0000"></div>
+          <div class="field"><label>Ciudad</label><input id="pf-ciudad" placeholder="Tu ciudad"></div>
+        </div>
+        <div style="margin-top:16px;"><button class="btn btn-primary btn-sm" onclick="toast('Perfil actualizado')">Guardar cambios</button></div>
+      </div>
+    </div>
+
+    <div class="view" id="v-cotizador">
+      <div class="header"><div><h2>Cotizar archivo</h2><p>Sube tu .STL y calcula el precio al instante.</p></div><span class="pill" id="priceRulePill"></span></div>
+      <div class="panel">
+        <div class="dropzone" id="dropzone" onclick="document.getElementById('stlInput').click()">
+          <strong>Haz clic para subir</strong> o arrastra tu archivo .STL aquí<br>
+          <span id="fileNameLabel" class="small-note"></span>
+        </div>
+        <input type="file" id="stlInput" accept=".stl" style="display:none">
+        <div class="form-grid" style="margin-top:16px;">
+          <div class="field"><label>Material</label><select id="q-material"></select></div>
+          <div class="field"><label>Color</label><select id="q-color"></select></div>
+          <div class="field"><label>Relleno 15%</label>
+            <select id="q-infill">
+              <option value="20" selected>15% — estándar</option>
+            </select>
+          </div>
+          <div class="field"><label>Cantidad</label><input type="number" id="q-cantidad" value="1" min="1"></div>
+        </div>+
+        <div class="row-between" style="margin-top:16px;">
+          <span class="small-note">El archivo queda "pendiente" hasta que el negocio lo revise.</span>
+          <button class="btn btn-primary" onclick="calcularCotizacion()">Calcular precio</button>
+        </div>
+        <div class="quote-result" id="quoteResult">
+          <div class="row-between">
+            <div><div class="small-note">Precio estimado total</div><div class="total" id="quoteTotal">Q0.00</div></div>
+            <button class="btn btn-sm btn-primary" onclick="guardarArchivo()">Guardar archivo</button>
+          </div>
+          <div class="quote-breakdown" id="quoteBreakdown"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="view" id="v-archivos">
+      <div class="header"><div><h2>Mis archivos</h2><p>Piezas cotizadas y su estado de aprobación.</p></div></div>
+      <div class="panel" style="padding:0;">
+        <table id="tblArchivos"><thead><tr><th>Archivo</th><th>Material</th><th>Peso</th><th>Tiempo</th><th>Precio</th><th>Estado</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <div class="view" id="v-catalogo">
+      <div class="header"><div><h2>Catálogo</h2><p>Productos listos para agregar al carrito.</p></div></div>
+      <div class="prod-grid" id="catalogoGrid"></div>
+    </div>
+
+    <div class="view" id="v-carrito">
+      <div class="header"><div><h2>Mi carrito</h2><p>Archivos aprobados y productos antes de confirmar el pedido.</p></div></div>
+      <div class="panel">
+        <div id="cartLines"></div>
+        <div class="cart-total"><span class="small-note">Total</span><span class="amount" id="cartTotal">Q0.00</span></div>
+        <div style="margin-top:14px; text-align:right;"><button class="btn btn-primary" onclick="confirmarPedido()">Confirmar pedido</button></div>
+      </div>
+    </div>
+
+    <div class="view" id="v-pedidos">
+      <div class="header"><div><h2>Mis pedidos</h2><p>Carritos confirmados y su seguimiento.</p></div></div>
+      <div class="panel" style="padding:0;">
+        <table id="tblPedidos"><thead><tr><th>Pedido</th><th>Detalle</th><th>Total</th><th>Estado</th><th>Fecha</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <div class="view" id="v-contacto">
+      <div class="header"><div><h2>Contactar al negocio</h2><p>Envía un mensaje sobre tu pedido o cotización.</p></div></div>
+      <div class="panel">
+        <div class="field" style="margin-bottom:14px;"><label>Asunto</label><input id="msg-asunto" placeholder="Ej. Duda sobre mi archivo"></div>
+        <div class="field" style="margin-bottom:14px;"><label>Mensaje</label><textarea id="msg-cuerpo" rows="4" placeholder="Escribe tu mensaje..."></textarea></div>
+        <button class="btn btn-primary btn-sm" onclick="enviarMensaje()">Enviar mensaje</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ================= NEGOCIO APP ================= -->
+<div class="app" id="app-negocio">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark"><span></span><span></span><span></span></div>Estudio 3D</div>
+    <div class="side-label">Mi negocio</div>
+    <button class="side-btn active" data-view="n-resumen" onclick="showView('negocio','n-resumen', this)">Resumen</button>
+    <div class="side-label">Lo que ofrezco</div>
+    <button class="side-btn" data-view="n-productos" onclick="showView('negocio','n-productos', this)">Productos</button>
+    <button class="side-btn" data-view="n-precios" onclick="showView('negocio','n-precios', this)">Precios y materiales</button>
+    <button class="side-btn" data-view="n-filamentos" onclick="showView('negocio','n-filamentos', this)">Filamentos</button>
+    <div class="side-label">Operación</div>
+    <button class="side-btn" data-view="n-archivos" onclick="showView('negocio','n-archivos', this)">Archivos de clientes</button>
+    <button class="side-btn" data-view="n-carritos" onclick="showView('negocio','n-carritos', this)">Carritos</button>
+    <button class="side-btn" data-view="n-camaras" onclick="showView('negocio','n-camaras', this)">Cámaras</button>
+    <div class="side-foot"><button class="side-btn" onclick="exitApp()">← Salir</button></div>
+  </aside>
+
+  <main class="main">
+    <!-- RESUMEN -->
+    <div class="view active" id="n-resumen">
+      <div class="header"><div><h2>Resumen del negocio</h2><p>Indicadores clave de este mes.</p></div><span class="pill">rol: negocio</span></div>
+      <div class="kpi-row" id="kpiRow"></div>
+      <div class="grid2">
+        <div class="panel">
+          <div class="phead"><div><h3>Ventas mensuales</h3><span class="sub">Últimos 6 meses · Quetzales</span></div></div>
+          <svg id="lineChart" viewBox="0 0 560 200" style="width:100%; height:auto;"></svg>
+        </div>
+        <div class="panel">
+          <div class="phead"><div><h3>Carritos por estado</h3><span class="sub">Todos los pedidos</span></div></div>
+          <div style="display:flex; align-items:center; gap:16px;">
+            <svg id="donutChart" viewBox="0 0 180 180" style="width:120px; height:120px; flex-shrink:0;"></svg>
+            <div class="legend" id="donutLegend"></div>
+          </div>
+        </div>
+      </div>
+      <div class="grid2b">
+        <div class="panel">
+          <div class="phead"><div><h3>Productos más vendidos</h3><span class="sub">Unidades en pedidos</span></div></div>
+          <div class="bar-list" id="topProductos"></div>
+        </div>
+        <div class="panel">
+          <div class="phead"><div><h3>Inventario de filamento</h3><span class="sub">% restante por carrete</span></div></div>
+          <div class="bar-list" id="filamentoList"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PRODUCTOS -->
+    <div class="view" id="n-productos">
+      <div class="header"><div><h2>Productos</h2><p>Lo que agregues aquí aparece en el catálogo de tus clientes.</p></div></div>
+      <div class="panel">
+        <div class="form-grid">
+          <div class="field"><label>Nombre</label><input id="np-nombre" placeholder="Ej. Maceta geométrica"></div>
+          <div class="field"><label>Descripción</label><input id="np-desc" placeholder="Ej. Diseño facetado, 12 cm"></div>
+          <div class="field"><label>Precio (Q)</label><input type="number" id="np-precio" min="0" step="0.01" placeholder="0.00"></div>
+          <div class="field"><label>Existencias</label><input type="number" id="np-exist" min="0" step="1" placeholder="0"></div>
+        </div>
+        <div style="margin-top:16px;"><button class="btn btn-primary btn-sm" onclick="formAgregarProducto()">Agregar al catálogo</button></div>
+      </div>
+      <div class="panel" style="padding:0; margin-top:16px;">
+        <table id="tblProductosNegocio"><thead><tr><th>Producto</th><th>Descripción</th><th>Precio (Q)</th><th>Existencias</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <!-- PRECIOS Y MATERIALES -->
+    <div class="view" id="n-precios">
+      <div class="header"><div><h2>Precios y materiales</h2><p>Con esto se calcula el precio de cada archivo que suben tus clientes.</p></div></div>
+
+      <div class="panel">
+        <div class="phead"><div><h3>Tarifas</h3><span class="sub">Cuánto cobras por material y por tiempo de impresión</span></div></div>
+        <div class="form-grid">
+          <div class="field"><label>Precio por gramo (Q)</label><input type="number" id="np-gramo" min="0" step="0.01" placeholder="0.00"></div>
+          <div class="field"><label>Precio por hora (Q)</label><input type="number" id="np-hora" min="0" step="0.01" placeholder="0.00"></div>
+        </div>
+        <div style="margin-top:16px;"><button class="btn btn-primary btn-sm" onclick="formGuardarPrecios()">Guardar tarifas</button></div>
+      </div>
+
+      <div class="grid2" style="margin-top:16px;">
+        <div class="panel">
+          <div class="phead"><div><h3>Materiales</h3><span class="sub">El multiplicador ajusta el precio por gramo (PLA = 1, PETG = 1.2...)</span></div></div>
+          <div class="form-grid">
+            <div class="field"><label>Material</label><input id="nm-nombre" placeholder="Ej. PLA"></div>
+            <div class="field"><label>Multiplicador</label><input type="number" id="nm-mult" min="0.1" step="0.05" placeholder="1.0"></div>
+          </div>
+          <div style="margin:12px 0;"><button class="btn btn-primary btn-sm" onclick="formAgregarMaterial()">Agregar material</button></div>
+          <div id="listaMateriales"></div>
+        </div>
+        <div class="panel">
+          <div class="phead"><div><h3>Colores</h3><span class="sub">Los colores que ofreces a tus clientes</span></div></div>
+          <div class="form-grid">
+            <div class="field"><label>Color</label><input id="nc-nombre" placeholder="Ej. Negro"></div>
+          </div>
+          <div style="margin:12px 0;"><button class="btn btn-primary btn-sm" onclick="formAgregarColor()">Agregar color</button></div>
+          <div id="listaColores"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FILAMENTOS -->
+    <div class="view" id="n-filamentos">
+      <div class="header"><div><h2>Filamentos</h2><p>Registra tus carretes y actualiza cuánto les queda.</p></div></div>
+      <div class="panel">
+        <div class="form-grid">
+          <div class="field"><label>Tipo y color</label><input id="nf-tipo" placeholder="Ej. PLA · Negro"></div>
+          <div class="field"><label>% restante</label><input type="number" id="nf-restante" min="0" max="100" step="1" placeholder="100"></div>
+          <div class="field"><label>Costo del carrete (Q)</label><input type="number" id="nf-costo" min="0" step="0.01" placeholder="Opcional"></div>
+        </div>
+        <div style="margin-top:16px;"><button class="btn btn-primary btn-sm" onclick="formAgregarFilamento()">Registrar filamento</button></div>
+      </div>
+      <div class="panel" style="padding:0; margin-top:16px;">
+        <table id="tblFilamentos"><thead><tr><th>Filamento</th><th>Restante</th><th>Costo</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <!-- ARCHIVOS DE CLIENTES -->
+    <div class="view" id="n-archivos">
+      <div class="header"><div><h2>Archivos de clientes</h2><p>Revisa las piezas cotizadas. Al aprobarlas, el cliente puede agregarlas al carrito.</p></div></div>
+      <div class="panel" style="padding:0;">
+        <table id="tblArchivosNegocio"><thead><tr><th>Cliente</th><th>Archivo</th><th>Material · Color</th><th>Peso · Tiempo</th><th>Precio</th><th>Estado</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <!-- CARRITOS -->
+    <div class="view" id="n-carritos">
+      <div class="header"><div><h2>Carritos</h2><p>Pedidos confirmados por los clientes. Cambia su estado según avance.</p></div></div>
+      <div class="panel" style="padding:0;">
+        <table id="tblCarritosNegocio"><thead><tr><th>Carrito</th><th>Cliente</th><th>Detalle</th><th>Total</th><th>Estado</th><th>Fecha</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <!-- CÁMARAS -->
+    <div class="view" id="n-camaras">
+      <div class="header"><div><h2>Cámaras</h2><p>Vigilancia asignada a cada impresora.</p></div><span class="pill" id="camSub"></span></div>
+      <div class="panel">
+        <div class="form-grid">
+          <div class="field"><label>Nombre de la cámara</label><input id="ncam-nombre" placeholder="Ej. Cámara 1 · Impresora A"></div>
+        </div>
+        <div style="margin-top:16px;"><button class="btn btn-primary btn-sm" onclick="formAgregarCamara()">Registrar cámara</button></div>
+      </div>
+      <div class="panel" style="margin-top:16px;"><div class="cams-grid" id="camsGrid"></div></div>
+    </div>
+  </main>
+</div>
+
+<!-- ================= LOGIN / REGISTRO (oculto hasta que se necesite) ================= -->
+<div id="login-modal" role="dialog" aria-modal="true" aria-labelledby="modal-titulo"
+    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:100; align-items:center; justify-content:center;">
+  <div class="panel" style="width:100%; max-width:340px;">
+    <h2 id="modal-titulo" style="font-family:var(--display); margin-bottom:15px;">Iniciar Sesión</h2>
+
+    <div class="field" style="margin-bottom:10px;">
+      <label for="login-email">Correo</label>
+      <input type="email" id="login-email" placeholder="tu@correo.com" autocomplete="email">
+    </div>
+    <div class="field" style="margin-bottom:15px;">
+      <label for="login-pass">Contraseña</label>
+      <input type="password" id="login-pass" placeholder="******" autocomplete="current-password">
+    </div>
+
+    <!-- Grupo: iniciar sesión -->
+    <div id="btn-login-group">
+      <button type="button" class="btn btn-primary" style="width:100%; margin-bottom:10px;" onclick="iniciarSesion()">Entrar</button>
+      <button type="button" class="btn btn-ghost" style="width:100%; margin-bottom:10px;" onclick="toggleModoAuth('registro')">¿No tienes cuenta? Regístrate</button>
+    </div>
+
+    <!-- Grupo: registro -->
+    <div id="btn-registro-group" style="display:none;">
+      <button type="button" class="btn btn-primary" style="width:100%; margin-bottom:10px;" onclick="registrarse()">Crear Cuenta</button>
+      <button type="button" class="btn btn-ghost" style="width:100%; margin-bottom:10px;" onclick="toggleModoAuth('login')">¿Ya tienes cuenta? Inicia sesión</button>
+    </div>
+
+    <button type="button" class="btn btn-ghost" style="width:100%; color:#888;" onclick="cerrarLogin()">Cancelar</button>
+  </div>
+</div>
+
+<script src="static/script.js"></script>
+</body>
+</html>
