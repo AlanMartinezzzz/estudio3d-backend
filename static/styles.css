@@ -233,9 +233,9 @@ body{overflow-x:hidden;}
 
 /* ============ TABLET / CELULAR (<=900px) ============ */
 @media (max-width:900px){
-  .app.active{flex-direction:column;}
+  .app, .app.active{flex-direction:column;}
   .sidebar{
-    width:100%; flex-direction:row; align-items:center; gap:6px; padding:10px 12px;
+    width:100%; flex:0 0 auto; align-self:stretch; flex-direction:row; align-items:center; gap:6px; padding:10px 12px;
     overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none;
     position:sticky; top:0; z-index:40; border-right:none; border-bottom:1px solid var(--line);
   }
