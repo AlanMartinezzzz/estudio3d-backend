@@ -32,7 +32,7 @@ const state = {
 function toast(msg){
   let t = document.createElement('div');
   t.textContent = msg;
-  t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#10140f;border:1px solid #2fae6b;color:#f3f5f1;padding:12px 20px;border-radius:8px;font-size:13.5px;z-index:999;box-shadow:0 8px 24px rgba(0,0,0,.5)';
+  t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#10140f;border:1px solid #2fae6b;color:#f3f5f1;padding:12px 20px;border-radius:8px;font-size:13.5px;max-width:calc(100vw - 32px);text-align:center;z-index:999;box-shadow:0 8px 24px rgba(0,0,0,.5)';
   document.body.appendChild(t);
   setTimeout(()=>t.remove(), 2800);
 }
