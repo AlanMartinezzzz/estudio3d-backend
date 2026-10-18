@@ -367,3 +367,10 @@ body{overflow-x:hidden;}
   .savebar{flex-direction:column; align-items:stretch; bottom:10px;}
   .savebar .actions .btn{flex:1;}
 }
+
+/* ---- validaciones ---- */
+select{color-scheme:dark;}
+.field .input-ico select{padding-left:38px;}
+.field.invalid input, .field.invalid select{border-color:var(--danger);}
+.field-error{font-size:11.5px; color:var(--danger); margin-top:6px;}
+.field select{font-weight:400; text-align:left; text-align-last:left; cursor:pointer;}

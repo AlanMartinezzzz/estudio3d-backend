@@ -177,7 +177,7 @@
         <span class="pill pill-ok"><i></i>Cliente registrado</span>
       </div>
 
-      <form id="perfil-form" class="perfil-grid" autocomplete="on" oninput="marcarPerfilSucio()" onchange="marcarPerfilSucio()" onsubmit="guardarPerfil(event)">
+      <form id="perfil-form" class="perfil-grid" autocomplete="on" novalidate oninput="alEscribirPerfil(event)" onchange="alEscribirPerfil(event)" onfocusout="alSalirCampo(event)" onsubmit="guardarPerfil(event)">
 
         <section class="panel pg-id id-card" aria-label="Resumen de tu cuenta">
           <div class="avatar avatar-lg" id="pf-avatar" aria-hidden="true">?</div>
@@ -209,9 +209,9 @@
               <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-mail"/></svg><input id="pf-correo" name="email" type="email" autocomplete="email" placeholder="tu@correo.com" readonly></div>
               <div class="help">El correo es tu acceso y no se puede cambiar.</div></div>
             <div class="field"><label for="pf-tel">Teléfono</label>
-              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-phone"/></svg><input id="pf-tel" name="tel" type="tel" inputmode="tel" autocomplete="tel" placeholder="+502 0000 0000"></div></div>
+              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-phone"/></svg><input id="pf-tel" name="tel" type="tel" inputmode="tel" autocomplete="tel" placeholder="+502 5555 1234"></div></div>
             <div class="field"><label for="pf-ciudad">Ciudad</label>
-              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg><input id="pf-ciudad" name="city" autocomplete="address-level2" placeholder="Tu ciudad"></div></div>
+              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg><select id="pf-ciudad" name="city" autocomplete="address-level2"></select></div></div>
           </div>
         </section>
 
@@ -222,11 +222,11 @@
           </div>
           <div class="form-grid">
             <div class="field span-2"><label for="pf-dir">Dirección de entrega</label>
-              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg><input id="pf-dir" autocomplete="street-address" placeholder="Ingresa tu dirección completa"></div></div>
+              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg><input id="pf-dir" maxlength="150" autocomplete="street-address" placeholder="Ingresa tu dirección completa"></div></div>
             <div class="field"><label for="pf-ciudad-envio">Ciudad</label>
-              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg><input id="pf-ciudad-envio" autocomplete="shipping address-level2" placeholder="Ciudad de entrega"></div></div>
+              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg><select id="pf-ciudad-envio" autocomplete="shipping address-level2"></select></div></div>
             <div class="field"><label for="pf-cp">Código postal <span class="opt">(opcional)</span></label>
-              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-hash"/></svg><input id="pf-cp" inputmode="numeric" autocomplete="postal-code" placeholder="Ej. 01001"></div></div>
+              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-hash"/></svg><input id="pf-cp" inputmode="numeric" maxlength="5" autocomplete="postal-code" placeholder="Ej. 01001"></div></div>
           </div>
         </section>
 
@@ -274,7 +274,7 @@
               <option value="20" selected>15% — estándar</option>
             </select>
           </div>
-          <div class="field"><label>Cantidad</label><input type="number" id="q-cantidad" value="1" min="1"></div>
+          <div class="field"><label>Cantidad</label><input type="number" id="q-cantidad" value="1" min="1" max="100" step="1"></div>
         </div>
         <div class="row-between" style="margin-top:16px;">
           <span class="small-note">El archivo queda "pendiente" hasta que el negocio lo revise.</span>

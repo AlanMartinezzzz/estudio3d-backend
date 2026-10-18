@@ -400,8 +400,64 @@ function initCliente(){
   });
 }
 
+// ---------- REGLAS Y RESTRICCIONES (edítalas aquí) ----------
+const MAX_ARCHIVO_MB = 50;      // tamaño máximo del STL
+const MIN_MEDIDA_MM  = 2;       // el lado más largo del modelo no puede ser menor
+const MAX_MEDIDA_MM  = 400;     // ni mayor (ajústalo al tamaño de tu cama de impresión)
+const MAX_CANTIDAD   = 100;     // piezas por cotización
+
+// Ciudades donde atiendes. Borra las que NO cubras o agrega las que falten.
+const CIUDADES_ENVIO = [
+  { grupo: 'Departamento de Guatemala', ciudades: [
+    'Guatemala', 'Mixco', 'Villa Nueva', 'Villa Canales', 'San Miguel Petapa', 'Santa Catarina Pinula',
+    'San José Pinula', 'Fraijanes', 'Chinautla', 'San Pedro Ayampuc', 'San Pedro Sacatepéquez',
+    'San Juan Sacatepéquez', 'Amatitlán', 'Palencia', 'San Raimundo', 'San José del Golfo', 'Chuarrancho' ] },
+  { grupo: 'Cabeceras departamentales', ciudades: [
+    'Antigua Guatemala', 'Chimaltenango', 'Escuintla', 'Cuilapa', 'Sololá', 'Totonicapán', 'Quetzaltenango',
+    'Mazatenango', 'Retalhuleu', 'San Marcos', 'Huehuetenango', 'Santa Cruz del Quiché', 'Salamá', 'Cobán',
+    'Flores', 'Puerto Barrios', 'Chiquimula', 'Zacapa', 'Jalapa', 'Jutiapa', 'Guastatoya' ] }
+];
+const CIUDADES_PLANAS = CIUDADES_ENVIO.reduce((a, g) => a.concat(g.ciudades), []);
+
+// Teléfonos de Guatemala: +502 y 8 dígitos. Fijos empiezan con 2, 6 o 7; celulares con 3, 4 o 5.
+function digitosTelGT(v){
+  const s = String(v || '').trim();
+  let d;
+  if(s.startsWith('+502')) d = s.slice(4).replace(/\D/g, '');
+  else { d = s.replace(/\D/g, ''); if(d.length > 8 && d.startsWith('502')) d = d.slice(3); }
+  return d;
+}
+function formatearTelGT(v){
+  const d = digitosTelGT(v).slice(0, 8);
+  if(!d) return '';
+  return '+502 ' + d.slice(0, 4) + (d.length > 4 ? ' ' + d.slice(4) : '');
+}
+function errTelGT(v){
+  const d = digitosTelGT(v);
+  if(!d) return 'Ingresa tu teléfono';
+  if(d.length !== 8) return 'Debe tener 8 dígitos, por ejemplo +502 5555 1234';
+  if(!/^[2-7]/.test(d)) return 'Los números de Guatemala empiezan con 2, 3, 4, 5, 6 o 7';
+  if(/^(\d)\1{7}$/.test(d)) return 'Ese número no parece real';
+  return '';
+}
+function errCiudad(v){
+  if(!String(v || '').trim()) return 'Selecciona una ciudad';
+  return CIUDADES_PLANAS.indexOf(v) === -1 ? 'Elige una ciudad de la lista' : '';
+}
+function errDireccion(v){
+  const s = String(v || '').trim();
+  if(s.length < 10) return 'Escribe tu dirección completa (calle, zona, colonia o referencias)';
+  if(s.length > 150) return 'La dirección es muy larga (máximo 150 caracteres)';
+  return '';
+}
+function errCP(v){
+  const s = String(v || '').trim();
+  return (s && !/^\d{5}$/.test(s)) ? 'El código postal tiene 5 dígitos' : '';
+}
+
 // ---------- PERFIL DEL CLIENTE ----------
 let perfilSucio = false;        // true cuando hay cambios sin guardar en el formulario
+let validarAlMostrar = null;    // al mandar al cliente a su perfil, marca lo que le falta
 let busquedaCatalogo = '';      // texto del buscador de la barra superior
 
 // Datos extra (dirección de envío y notificaciones).
@@ -419,9 +475,19 @@ function leerExtraPerfil(){
   return base;
 }
 
+function poblarCiudades(){
+  ['pf-ciudad', 'pf-ciudad-envio'].forEach((id, i) => {
+    const sel = document.getElementById(id);
+    if(!sel || sel.options.length) return;
+    sel.innerHTML = `<option value="">${i ? 'Selecciona la ciudad de entrega' : 'Selecciona tu ciudad'}</option>` +
+      CIUDADES_ENVIO.map(g => `<optgroup label="${esc(g.grupo)}">` + g.ciudades.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('') + '</optgroup>').join('');
+  });
+}
+
 function rellenarPerfil(){
   const p = state.perfil;
   if(!p) return;
+  poblarCiudades();
   const $ = id => document.getElementById(id);
   const setText = (id, v) => { const el = $(id); if(el) el.textContent = v; };
 
@@ -451,16 +517,96 @@ function rellenarPerfil(){
   setText('pf-pct-hint', faltan.length ? 'Te falta: ' + faltan.join(', ') + '.' : 'Todo listo para tus envíos.');
 
   // --- Campos del formulario (no se pisan si hay cambios sin guardar) ---
-  if(perfilSucio) return;
-  const setVal = (id, val) => { const el = $(id); if(el && document.activeElement !== el) el.value = val || ''; };
-  setVal('pf-nombre', nombre);
-  setVal('pf-correo', correo);
-  setVal('pf-tel', tel);
-  setVal('pf-ciudad', ciudad);
-  setVal('pf-dir', x.direccion);
-  setVal('pf-ciudad-envio', x.ciudad_envio);
-  setVal('pf-cp', x.codigo_postal);
-  const sw = $('pf-notif'); if(sw) sw.checked = x.notif_correo;
+  if(!perfilSucio){
+    const setVal = (id, val) => { const el = $(id); if(el && document.activeElement !== el) el.value = val || ''; };
+    setVal('pf-nombre', nombre);
+    setVal('pf-correo', correo);
+    setVal('pf-tel', formatearTelGT(tel));
+    setVal('pf-ciudad', ciudad);            // si la ciudad guardada no está en la lista, queda en blanco para que elija
+    setVal('pf-dir', x.direccion);
+    setVal('pf-ciudad-envio', x.ciudad_envio);
+    setVal('pf-cp', x.codigo_postal);
+    const sw = $('pf-notif'); if(sw) sw.checked = x.notif_correo;
+  }
+  if(validarAlMostrar){ const o = validarAlMostrar; validarAlMostrar = null; validarFormularioPerfil(o); }
+}
+
+// ---------- Validación del formulario de perfil ----------
+function setError(id, msg){
+  const el = document.getElementById(id);
+  const field = el && el.closest('.field');
+  if(!field) return;
+  let box = field.querySelector('.field-error');
+  if(msg){
+    if(!box){ box = document.createElement('div'); box.className = 'field-error'; box.setAttribute('role', 'alert'); field.appendChild(box); }
+    box.textContent = msg;
+    field.classList.add('invalid');
+    el.setAttribute('aria-invalid', 'true');
+  } else {
+    if(box) box.remove();
+    field.classList.remove('invalid');
+    el.removeAttribute('aria-invalid');
+  }
+}
+
+// opts.envio === undefined  → solo valida lo que el cliente haya escrito (al guardar el perfil)
+// opts.envio === false/true → además exige teléfono y ciudad (y la dirección si es true)
+function validarFormularioPerfil(opts){
+  opts = opts || {};
+  const exigir = opts.envio !== undefined;
+  const v = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const err = {};
+  if(v('pf-nombre').length < 2) err['pf-nombre'] = 'Escribe tu nombre';
+  if(v('pf-tel') || exigir){ const m = errTelGT(v('pf-tel')); if(m) err['pf-tel'] = m; }
+  if(v('pf-ciudad') || exigir){ const m = errCiudad(v('pf-ciudad')); if(m) err['pf-ciudad'] = m; }
+  const dir = v('pf-dir'), ce = v('pf-ciudad-envio'), cp = v('pf-cp');
+  if(dir || ce || cp || opts.envio){
+    const m1 = errDireccion(dir); if(m1) err['pf-dir'] = m1;
+    const m2 = errCiudad(ce);     if(m2) err['pf-ciudad-envio'] = m2;
+  }
+  const m3 = errCP(cp); if(m3) err['pf-cp'] = m3;
+
+  ['pf-nombre', 'pf-tel', 'pf-ciudad', 'pf-dir', 'pf-ciudad-envio', 'pf-cp'].forEach(id => setError(id, err[id] || ''));
+  const primero = Object.keys(err)[0];
+  if(primero){
+    const el = document.getElementById(primero);
+    if(opts.foco) el.focus(); else el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  return err;
+}
+
+function alEscribirPerfil(e){
+  const t = e && e.target;
+  if(t && t.id){
+    if(t.id === 'pf-tel'){ const f = formatearTelGT(t.value); if(f !== t.value) t.value = f; }
+    if(t.id === 'pf-cp'){ t.value = t.value.replace(/\D/g, '').slice(0, 5); }
+    setError(t.id, '');
+  }
+  marcarPerfilSucio();
+}
+
+function alSalirCampo(e){
+  const t = e && e.target;
+  if(!t || !t.id || !t.value.trim()) return;
+  if(t.id === 'pf-tel') setError('pf-tel', errTelGT(t.value));
+  else if(t.id === 'pf-cp') setError('pf-cp', errCP(t.value));
+  else if(t.id === 'pf-dir') setError('pf-dir', errDireccion(t.value));
+}
+
+// Antes de guardar un archivo o confirmar un pedido: el perfil debe estar completo y ser válido
+function exigirPerfil(conEnvio){
+  const p = state.perfil || {}, x = leerExtraPerfil(), falta = [];
+  if(errTelGT(p.telefono)) falta.push('teléfono');
+  if(errCiudad(p.ciudad)) falta.push('ciudad');
+  if(conEnvio){
+    if(errDireccion(x.direccion)) falta.push('dirección de entrega');
+    if(errCiudad(x.ciudad_envio)) falta.push('ciudad de entrega');
+  }
+  if(!falta.length) return true;
+  validarAlMostrar = { envio: !!conEnvio };
+  toast('Antes de continuar completa en tu perfil: ' + falta.join(', ') + '.');
+  irAVista('v-perfil');
+  return false;
 }
 
 function marcarPerfilSucio(){
@@ -486,14 +632,17 @@ async function guardarPerfil(event) {
     if (!user) { toast("Debes iniciar sesión para guardar los cambios"); return; }
     if (!state.perfil) { toast("No se encontró tu perfil"); return; }
 
+    const errores = validarFormularioPerfil({ foco: true });
+    if(Object.keys(errores).length){ toast('Revisa los campos marcados en rojo'); return; }
+
     const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
     const datos = {
       nombre:   val('pf-nombre') || state.perfil.nombre,
-      telefono: val('pf-tel') || null,
+      telefono: val('pf-tel') ? formatearTelGT(val('pf-tel')) : null,
       ciudad:   val('pf-ciudad') || null
     };
     const extra = {
-      direccion:     val('pf-dir'),
+      direccion:     val('pf-dir').replace(/\s+/g, ' '),
       ciudad_envio:  val('pf-ciudad-envio'),
       codigo_postal: val('pf-cp'),
       notif_correo:  !!document.getElementById('pf-notif').checked
@@ -700,6 +849,8 @@ function ocultarResultado(){
 
 function handleSTL(file) {
   if(!file.name.toLowerCase().endsWith('.stl')){ toast('Solo se aceptan archivos .stl'); return; }
+  if(file.size === 0){ toast('El archivo está vacío.'); return; }
+  if(file.size > MAX_ARCHIVO_MB * 1024 * 1024){ toast(`El archivo pesa más de ${MAX_ARCHIVO_MB} MB. Redúcelo o contáctanos.`); return; }
   archivoSeleccionado = file;
   state.lastQuote = null;
   volumenMm3 = 0; areaMm2 = 0; alturaMm = 0; pesoBaseG = 0; tiempoBaseH = 0;
@@ -716,14 +867,20 @@ function handleSTL(file) {
         document.getElementById('fileNameLabel').textContent = 'Archivo: ' + file.name;
         return;
       }
+      const mayor = Math.max(...dims);
+      if(mayor < MIN_MEDIDA_MM || mayor > MAX_MEDIDA_MM){
+        toast(mayor < MIN_MEDIDA_MM
+          ? `El modelo mide menos de ${MIN_MEDIDA_MM} mm: revisa que el STL esté en milímetros.`
+          : `El modelo mide más de ${MAX_MEDIDA_MM/10} cm, que es nuestro tamaño máximo. Revisa que esté en milímetros o contáctanos.`);
+        document.getElementById('fileNameLabel').textContent = 'Archivo rechazado: ' + file.name;
+        archivoSeleccionado = null;
+        return;
+      }
       volumenMm3 = volumeMm3; areaMm2 = area; alturaMm = dims[2];
       areaLadoMm2 = aLado; areaArribaMm2 = aArriba; areaAbajoMm2 = aAbajo;
       actualizarPesoTiempo();
 
-      const mayor = Math.max(...dims);
-      if(mayor < 2)   toast('El modelo mide menos de 2 mm: revisa que el STL esté en milímetros.');
-      else if(mayor > 400) toast('El modelo mide más de 40 cm: revisa las unidades del STL (deben ser mm).');
-      else toast(`Modelo leído: ${tris} triángulos · ${dims.map(d=>d.toFixed(0)).join(' × ')} mm`);
+      toast(`Modelo leído: ${tris} triángulos · ${dims.map(d=>d.toFixed(0)).join(' × ')} mm`);
     } catch(err) {
       console.error(err);
       toast('No se pudo leer el archivo .STL. Verifica que no esté dañado.');
@@ -778,7 +935,10 @@ function calcularCotizacion() {
 
   const materialNombre = document.getElementById('q-material').value;
   const color = document.getElementById('q-color').value;
-  const cant = Math.max(1, parseInt((document.getElementById('q-cantidad') || {}).value) || 1);
+  const cantIn = document.getElementById('q-cantidad');
+  let cant = Math.max(1, parseInt((cantIn || {}).value) || 1);
+  if(cant > MAX_CANTIDAD){ cant = MAX_CANTIDAD; toast(`La cantidad máxima por cotización es ${MAX_CANTIDAD}. Para más piezas contáctanos.`); }
+  if(cantIn) cantIn.value = cant;
   const material = state.materiales.find(m => m.nombre === materialNombre);
 
   if(!material){ toast('Elige un material'); return; }
@@ -848,6 +1008,7 @@ async function guardarArchivo(){
   if(guardandoArchivo) return;                       // ya hay un guardado en curso
   if(!state.lastQuote){ toast('Calcula un precio primero'); return; }
   if(!state.perfil){ toast('No se encontró tu perfil de cliente'); return; }
+  if(!exigirPerfil(false)) return;          // necesitamos tu teléfono y ciudad para contactarte
 
   guardandoArchivo = true;
   const btn = document.querySelector('[onclick="guardarArchivo()"]');
@@ -1012,6 +1173,7 @@ function quitarDelCarrito(i){ state.carrito.splice(i,1); renderCarrito(); }
 async function confirmarPedido(){
   if(!state.carrito.length){ toast('Tu carrito está vacío'); return; }
   if(!state.perfil){ toast('No se encontró tu perfil de cliente'); return; }
+  if(!exigirPerfil(true)) return;           // para confirmar un pedido hace falta la dirección de entrega
 
   await cargarBase();
   for(const l of state.carrito){
