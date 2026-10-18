@@ -144,20 +144,22 @@
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
   <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
   <symbol id="i-hash" viewBox="0 0 24 24"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
 </svg>
 
 <!-- ================= CLIENTE APP ================= -->
 <div class="app" id="app-cliente">
   <aside class="sidebar">
     <div class="brand"><div class="brand-mark"><span></span><span></span><span></span></div>Estudio 3D</div>
-    <div class="side-label">Cuenta</div>
-    <button class="side-btn active" data-view="v-perfil" onclick="showView('cliente','v-perfil', this)"><svg class="ico" aria-hidden="true"><use href="#i-user"/></svg>Perfil</button>
-    <button class="side-btn" data-view="v-cotizador" onclick="showView('cliente','v-cotizador', this)"><svg class="ico" aria-hidden="true"><use href="#i-upload"/></svg>Cotizar archivo</button>
-    <button class="side-btn" data-view="v-archivos" onclick="showView('cliente','v-archivos', this)"><svg class="ico" aria-hidden="true"><use href="#i-file"/></svg>Mis archivos</button>
     <div class="side-label">Compras</div>
-    <button class="side-btn" data-view="v-catalogo" onclick="showView('cliente','v-catalogo', this)"><svg class="ico" aria-hidden="true"><use href="#i-grid"/></svg>Catálogo</button>
+    <button class="side-btn active" data-view="v-catalogo" onclick="showView('cliente','v-catalogo', this)"><svg class="ico" aria-hidden="true"><use href="#i-grid"/></svg>Catálogo</button>
     <button class="side-btn" data-view="v-carrito" onclick="showView('cliente','v-carrito', this)"><svg class="ico" aria-hidden="true"><use href="#i-cart"/></svg>Mi carrito <span class="cart-count" id="cartCount">0</span></button>
     <button class="side-btn" data-view="v-pedidos" onclick="showView('cliente','v-pedidos', this)"><svg class="ico" aria-hidden="true"><use href="#i-box"/></svg>Mis pedidos</button>
+    <div class="side-label">Mis piezas</div>
+    <button class="side-btn" data-view="v-cotizador" onclick="showView('cliente','v-cotizador', this)"><svg class="ico" aria-hidden="true"><use href="#i-upload"/></svg>Cotizar archivo</button>
+    <button class="side-btn" data-view="v-archivos" onclick="showView('cliente','v-archivos', this)"><svg class="ico" aria-hidden="true"><use href="#i-file"/></svg>Mis archivos</button>
     <div class="side-label">Soporte</div>
     <button class="side-btn" data-view="v-contacto" onclick="showView('cliente','v-contacto', this)"><svg class="ico" aria-hidden="true"><use href="#i-headset"/></svg>Contactar negocio</button>
     <div class="side-foot"><button class="side-btn" onclick="exitApp()"><svg class="ico" aria-hidden="true"><use href="#i-logout"/></svg>Salir</button></div>
@@ -169,95 +171,8 @@
         <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>
         <input id="buscador" type="search" placeholder="Buscar en el catálogo..." autocomplete="off" aria-label="Buscar en el catálogo" oninput="if(!this.value && busquedaCatalogo){ limpiarBusqueda(); }">
       </form>
-      <div class="userchip"><span class="avatar avatar-sm" id="pf-avatar-top">?</span><span id="pf-nombre-top">Cliente</span></div>
+      <button type="button" class="userchip" onclick="abrirPerfil()" aria-haspopup="dialog" aria-label="Abrir mi perfil" title="Mi perfil"><span class="avatar avatar-sm" id="pf-avatar-top">?</span><span id="pf-nombre-top">Cliente</span><svg class="ico" aria-hidden="true"><use href="#i-chevron"/></svg></button>
     </div>
-    <div class="view active" id="v-perfil">
-      <div class="header">
-        <div><h2>Mi cuenta</h2><p>Administra tu información personal y de contacto.</p></div>
-        <span class="pill pill-ok"><i></i>Cliente registrado</span>
-      </div>
-
-      <form id="perfil-form" class="perfil-grid" autocomplete="on" novalidate oninput="alEscribirPerfil(event)" onchange="alEscribirPerfil(event)" onfocusout="alSalirCampo(event)" onsubmit="guardarPerfil(event)">
-
-        <section class="panel pg-id id-card" aria-label="Resumen de tu cuenta">
-          <div class="avatar avatar-lg" id="pf-avatar" aria-hidden="true">?</div>
-          <h3 id="pf-nombre-card">Cliente</h3>
-          <div class="id-mail" id="pf-correo-card"></div>
-
-          <div class="complete">
-            <div class="top-row"><span>Perfil completo</span><span class="num" id="pf-pct">0%</span></div>
-            <div class="bar-track"><div class="bar-fill" id="pf-pct-bar" style="width:0%"></div></div>
-            <div class="hint" id="pf-pct-hint"></div>
-          </div>
-
-          <div class="id-stats">
-            <div><b id="pf-stat-archivos">0</b><span>Archivos subidos</span></div>
-            <div><b id="pf-stat-pedidos">0</b><span>Pedidos completados</span></div>
-          </div>
-          <button type="button" class="btn" onclick="cambiarPassword()"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg>Cambiar contraseña</button>
-        </section>
-
-        <section class="panel pg-info">
-          <div class="phead-ico">
-            <div class="badge-ico"><svg class="ico" aria-hidden="true"><use href="#i-user"/></svg></div>
-            <div><h3>Información personal</h3><p>Aquí puedes actualizar tus datos personales.</p></div>
-          </div>
-          <div class="form-grid">
-            <div class="field"><label for="pf-nombre">Nombre completo</label>
-              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-user"/></svg><input id="pf-nombre" name="name" autocomplete="name" placeholder="Tu nombre"></div></div>
-            <div class="field"><label for="pf-correo">Correo electrónico</label>
-              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-mail"/></svg><input id="pf-correo" name="email" type="email" autocomplete="email" placeholder="tu@correo.com" readonly></div>
-              <div class="help">El correo es tu acceso y no se puede cambiar.</div></div>
-            <div class="field"><label for="pf-tel">Teléfono</label>
-              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-phone"/></svg><input id="pf-tel" name="tel" type="tel" inputmode="tel" autocomplete="tel" placeholder="+502 5555 1234"></div></div>
-            <div class="field"><label for="pf-ciudad">Ciudad</label>
-              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg><select id="pf-ciudad" name="city" autocomplete="address-level2"></select></div></div>
-          </div>
-        </section>
-
-        <section class="panel pg-dir">
-          <div class="phead-ico">
-            <div class="badge-ico"><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg></div>
-            <div><h3>Dirección de envío</h3><p>Ingresa tu dirección para la entrega de tus pedidos.</p></div>
-          </div>
-          <div class="form-grid">
-            <div class="field span-2"><label for="pf-dir">Dirección de entrega</label>
-              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg><input id="pf-dir" maxlength="150" autocomplete="street-address" placeholder="Ingresa tu dirección completa"></div></div>
-            <div class="field"><label for="pf-ciudad-envio">Ciudad</label>
-              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg><select id="pf-ciudad-envio" autocomplete="shipping address-level2"></select></div></div>
-            <div class="field"><label for="pf-cp">Código postal <span class="opt">(opcional)</span></label>
-              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-hash"/></svg><input id="pf-cp" inputmode="numeric" maxlength="5" autocomplete="postal-code" placeholder="Ej. 01001"></div></div>
-          </div>
-        </section>
-
-        <section class="panel pg-pref">
-          <div class="phead-ico">
-            <div class="badge-ico"><svg class="ico" aria-hidden="true"><use href="#i-bell"/></svg></div>
-            <div><h3>Preferencias de la cuenta</h3><p>Gestiona tus notificaciones y comunicaciones.</p></div>
-          </div>
-          <div class="pref">
-            <div class="badge-ico sm"><svg class="ico" aria-hidden="true"><use href="#i-mail"/></svg></div>
-            <div class="txt"><b>Notificaciones por correo</b><span>Cotizaciones listas, pedidos enviados, promociones.</span></div>
-            <label class="switch"><input type="checkbox" id="pf-notif" checked aria-label="Notificaciones por correo"><span class="slider"></span></label>
-          </div>
-        </section>
-
-        <section class="panel pg-help">
-          <svg class="ico" aria-hidden="true"><use href="#i-info"/></svg>
-          <div class="txt"><b>¿Necesitas ayuda?</b><span>Si tienes alguna duda o problema con tu cuenta, escríbenos desde la sección de soporte.</span></div>
-          <button type="button" class="btn" onclick="irAVista('v-contacto')"><svg class="ico" aria-hidden="true"><use href="#i-headset"/></svg>Contactar negocio</button>
-        </section>
-
-        <div class="savebar" id="savebar" hidden role="status">
-          <span>Tienes cambios sin guardar</span>
-          <div class="actions">
-            <button type="button" class="btn btn-ghost btn-sm" onclick="descartarPerfil()">Descartar</button>
-            <button type="submit" class="btn btn-primary btn-sm" id="btnGuardarPerfil">Guardar cambios</button>
-          </div>
-        </div>
-      </form>
-    </div>
-
     <div class="view" id="v-cotizador">
       <div class="header"><div><h2>Cotizar archivo</h2><p>Sube tu .STL y calcula el precio al instante.</p></div><span class="pill" id="priceRulePill"></span></div>
       <div class="panel">
@@ -297,7 +212,7 @@
       </div>
     </div>
 
-    <div class="view" id="v-catalogo">
+    <div class="view active" id="v-catalogo">
       <div class="header"><div><h2>Catálogo</h2><p>Productos listos para agregar al carrito.</p></div></div>
       <div class="prod-grid" id="catalogoGrid"></div>
     </div>
@@ -327,6 +242,108 @@
       </div>
     </div>
   </main>
+
+  <!-- Ventana de perfil (se abre desde el botón de arriba a la derecha) -->
+  <div class="modal-back" id="perfil-modal" hidden onclick="if(event.target===this) cerrarPerfil()">
+    <div class="modal-win" role="dialog" aria-modal="true" aria-labelledby="perfil-titulo">
+      <div class="modal-head">
+        <div><h2 id="perfil-titulo">Mi cuenta</h2><p>Administra tu información personal y de contacto.</p></div>
+        <div class="modal-head-r">
+          <span class="pill pill-ok"><i></i>Cliente registrado</span>
+          <button type="button" class="icon-btn" aria-label="Cerrar" onclick="cerrarPerfil()"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <form id="perfil-form" class="perfil-grid" autocomplete="on" novalidate oninput="alEscribirPerfil(event)" onchange="alEscribirPerfil(event)" onfocusout="alSalirCampo(event)" onsubmit="guardarPerfil(event)">
+
+        <section class="panel pg-id id-card" aria-label="Resumen de tu cuenta">
+          <div class="avatar avatar-lg" id="pf-avatar" aria-hidden="true">?</div>
+          <h3 id="pf-nombre-card">Cliente</h3>
+          <div class="id-mail" id="pf-correo-card"></div>
+          <div class="id-via" id="pf-via" hidden><svg class="ico" aria-hidden="true"><use href="#i-shield"/></svg>Conectado con Google</div>
+
+          <div class="complete">
+            <div class="top-row"><span>Perfil completo</span><span class="num" id="pf-pct">0%</span></div>
+            <div class="bar-track"><div class="bar-fill" id="pf-pct-bar" style="width:0%"></div></div>
+            <div class="hint" id="pf-pct-hint"></div>
+          </div>
+
+          <div class="id-stats">
+            <div><b id="pf-stat-archivos">0</b><span>Archivos subidos</span></div>
+            <div><b id="pf-stat-pedidos">0</b><span>Pedidos completados</span></div>
+          </div>
+          <div class="acceso" id="pf-acceso">
+            <button type="button" class="btn" id="pf-btn-pass" onclick="cambiarPassword()"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg>Cambiar contraseña</button>
+            <div class="acceso-google" id="pf-acceso-google" hidden>
+              <div class="ag-top"><svg class="ico" aria-hidden="true"><use href="#i-shield"/></svg><b>Cuenta de Google</b></div>
+              <p>Inicias sesión con Google, así que tu contraseña y la seguridad de tu acceso se administran desde tu cuenta de Google.</p>
+              <a class="btn" href="https://myaccount.google.com/" target="_blank" rel="noopener noreferrer">Administrar cuenta de Google</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel pg-info">
+          <div class="phead-ico">
+            <div class="badge-ico"><svg class="ico" aria-hidden="true"><use href="#i-user"/></svg></div>
+            <div><h3>Información personal</h3><p>Aquí puedes actualizar tus datos personales.</p></div>
+          </div>
+          <div class="form-grid">
+            <div class="field"><label for="pf-nombre">Nombre completo</label>
+              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-user"/></svg><input id="pf-nombre" name="name" autocomplete="name" placeholder="Tu nombre"></div></div>
+            <div class="field"><label for="pf-correo">Correo electrónico</label>
+              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-mail"/></svg><input id="pf-correo" name="email" type="email" autocomplete="email" placeholder="tu@correo.com" readonly></div>
+              <div class="help" id="pf-correo-help">El correo es tu acceso y no se puede cambiar.</div></div>
+            <div class="field"><label for="pf-tel">Teléfono</label>
+              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-phone"/></svg><input id="pf-tel" name="tel" type="tel" inputmode="tel" autocomplete="tel" placeholder="+502 5555 1234"></div></div>
+            <div class="field"><label for="pf-ciudad">Ciudad</label>
+              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg><select id="pf-ciudad" name="city" autocomplete="address-level2"></select></div></div>
+          </div>
+        </section>
+
+        <section class="panel pg-dir">
+          <div class="phead-ico">
+            <div class="badge-ico"><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg></div>
+            <div><h3>Dirección de envío</h3><p>Ingresa tu dirección para la entrega de tus pedidos.</p></div>
+          </div>
+          <div class="form-grid">
+            <div class="field span-2"><label for="pf-dir">Dirección de entrega</label>
+              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg><input id="pf-dir" maxlength="150" autocomplete="street-address" placeholder="Ingresa tu dirección completa"></div></div>
+            <div class="field"><label for="pf-ciudad-envio">Ciudad</label>
+              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg><select id="pf-ciudad-envio" autocomplete="shipping address-level2"></select></div></div>
+            <div class="field"><label for="pf-cp">Código postal <span class="opt">(opcional)</span></label>
+              <div class="input-ico"><svg class="ico" aria-hidden="true"><use href="#i-hash"/></svg><input id="pf-cp" inputmode="numeric" maxlength="5" autocomplete="postal-code" placeholder="Ej. 01001"></div></div>
+          </div>
+        </section>
+
+        <section class="panel pg-pref">
+          <div class="phead-ico">
+            <div class="badge-ico"><svg class="ico" aria-hidden="true"><use href="#i-bell"/></svg></div>
+            <div><h3>Preferencias de la cuenta</h3><p>Gestiona tus notificaciones y comunicaciones.</p></div>
+          </div>
+          <div class="pref">
+            <div class="badge-ico sm"><svg class="ico" aria-hidden="true"><use href="#i-mail"/></svg></div>
+            <div class="txt"><b>Notificaciones por correo</b><span>Cotizaciones listas, pedidos enviados, promociones.</span></div>
+            <label class="switch"><input type="checkbox" id="pf-notif" checked aria-label="Notificaciones por correo"><span class="slider"></span></label>
+          </div>
+        </section>
+
+        <section class="panel pg-help">
+          <svg class="ico" aria-hidden="true"><use href="#i-info"/></svg>
+          <div class="txt"><b>¿Necesitas ayuda?</b><span>Si tienes alguna duda o problema con tu cuenta, escríbenos desde la sección de soporte.</span></div>
+          <button type="button" class="btn" onclick="if(cerrarPerfil()) irAVista('v-contacto')"><svg class="ico" aria-hidden="true"><use href="#i-headset"/></svg>Contactar negocio</button>
+        </section>
+
+        <div class="savebar" id="savebar" hidden role="status">
+          <span>Tienes cambios sin guardar</span>
+          <div class="actions">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="descartarPerfil()">Descartar</button>
+            <button type="submit" class="btn btn-primary btn-sm" id="btnGuardarPerfil">Guardar cambios</button>
+          </div>
+        </div>
+      </form>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ================= NEGOCIO APP ================= -->

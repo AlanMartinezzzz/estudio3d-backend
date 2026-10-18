@@ -142,6 +142,7 @@ async function mostrarApp(role) {
   } else {
     if (appNegocio) appNegocio.style.display = 'none';
     if (appCliente) appCliente.style.display = 'flex';
+    mostrarVistaInicial();
     await cargarCliente();
     initCliente();
   }
@@ -289,6 +290,13 @@ async function cargarBase(){
 async function cargarCliente(){
   const { data: { user } } = await supabase.auth.getUser();
   if(!user) return;
+
+  // ¿Entró con Google o con correo y contraseña?
+  const ap = user.app_metadata || {};
+  const provs = ap.providers || (ap.provider ? [ap.provider] : []);
+  state.esSoloGoogle = provs.indexOf('google') !== -1 && provs.indexOf('email') === -1;
+  const um = user.user_metadata || {};
+  state.fotoGoogle = state.esSoloGoogle ? (um.avatar_url || um.picture || '') : '';
 
   // La fila de 'usuarios' la crea el trigger al registrarse (correo o Google)
   let per = await supabase.from('usuarios').select('*').eq('auth_id', user.id).maybeSingle();
@@ -500,8 +508,15 @@ function rellenarPerfil(){
   // --- Tarjeta de identidad (siempre se actualiza) ---
   const visible = nombre || correo.split('@')[0] || 'Cliente';
   const inicial = (nombre || correo || '?').trim().charAt(0).toUpperCase();
-  setText('pf-avatar', inicial);
-  setText('pf-avatar-top', inicial);
+  pintarAvatar($('pf-avatar'), inicial, state.fotoGoogle);
+  pintarAvatar($('pf-avatar-top'), inicial, state.fotoGoogle);
+
+  // Cuenta de Google: no hay contraseña que cambiar aquí
+  const g = !!state.esSoloGoogle;
+  const via = $('pf-via'); if(via) via.hidden = !g;
+  const bp = $('pf-btn-pass'); if(bp) bp.hidden = g;
+  const ag = $('pf-acceso-google'); if(ag) ag.hidden = !g;
+  setText('pf-correo-help', g ? 'Es el correo de tu cuenta de Google y no se puede cambiar.' : 'El correo es tu acceso y no se puede cambiar.');
   setText('pf-nombre-card', visible);
   setText('pf-nombre-top', visible);
   setText('pf-correo-card', correo);
@@ -605,7 +620,7 @@ function exigirPerfil(conEnvio){
   if(!falta.length) return true;
   validarAlMostrar = { envio: !!conEnvio };
   toast('Antes de continuar completa en tu perfil: ' + falta.join(', ') + '.');
-  irAVista('v-perfil');
+  abrirPerfil();
   return false;
 }
 
@@ -681,10 +696,75 @@ async function guardarPerfil(event) {
 
 // Envía un correo para cambiar la contraseña
 async function cambiarPassword(){
+  if(state.esSoloGoogle){ toast('Tu cuenta usa Google: administra tu contraseña desde tu cuenta de Google'); return; }
   const correo = state.perfil && state.perfil.correo;
   if(!correo){ toast('No encontramos tu correo'); return; }
   const { error } = await supabase.auth.resetPasswordForEmail(correo);
   toast(error ? 'No se pudo enviar el correo: ' + error.message : 'Te enviamos un correo para cambiar tu contraseña');
+}
+
+// ---------- Ventana de perfil ----------
+let perfilAbierto = false, perfilFocoPrevio = null;
+
+function abrirPerfil(){
+  const m = document.getElementById('perfil-modal');
+  if(!m || !m.hidden) return;
+  perfilFocoPrevio = document.activeElement;
+  m.hidden = false; perfilAbierto = true;
+  document.body.style.overflow = 'hidden';
+  rellenarPerfil();                                    // datos frescos (y marca lo que falte si venimos de un aviso)
+  if(!m.querySelector('.invalid')){ const x = m.querySelector('.icon-btn'); if(x) x.focus(); }
+}
+
+// Devuelve true si se cerró (o ya estaba cerrada) y false si el cliente decidió seguir editando
+function cerrarPerfil(){
+  const m = document.getElementById('perfil-modal');
+  if(!m || m.hidden) return true;
+  if(perfilSucio){
+    if(!confirm('Tienes cambios sin guardar. ¿Descartarlos?')) return false;
+    descartarPerfil();
+  }
+  ['pf-nombre', 'pf-tel', 'pf-ciudad', 'pf-dir', 'pf-ciudad-envio', 'pf-cp'].forEach(id => setError(id, ''));
+  m.hidden = true; perfilAbierto = false;
+  document.body.style.overflow = '';
+  if(perfilFocoPrevio && perfilFocoPrevio.focus) perfilFocoPrevio.focus();
+  return true;
+}
+
+document.addEventListener('keydown', e => {
+  if(!perfilAbierto) return;
+  if(e.key === 'Escape'){ e.preventDefault(); cerrarPerfil(); return; }
+  if(e.key === 'Tab'){                                 // el foco no se escapa de la ventana
+    const m = document.getElementById('perfil-modal');
+    const f = Array.prototype.filter.call(m.querySelectorAll('a[href], button:not([disabled]), input, select, textarea'), el => el.offsetParent !== null);
+    if(!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if(e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+  }
+});
+
+// Muestra la foto (la de Google, si hay) y, si no carga, la inicial
+function pintarAvatar(el, inicial, foto){
+  if(!el) return;
+  const ok = !!foto && /^https:\/\//.test(foto);
+  if(ok && el.dataset.foto === foto && el.querySelector('img')) return;
+  el.textContent = inicial; delete el.dataset.foto;
+  if(!ok) return;
+  const img = new Image();
+  img.alt = ''; img.referrerPolicy = 'no-referrer';
+  img.onload = () => { el.textContent = ''; el.appendChild(img); el.dataset.foto = foto; };
+  img.src = foto;
+}
+
+// Al entrar, el cliente ve primero el catálogo
+function mostrarVistaInicial(){
+  const app = document.getElementById('app-cliente');
+  if(!app) return;
+  app.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'v-catalogo'));
+  app.querySelectorAll('.sidebar .side-btn').forEach(b => b.classList.toggle('active', b.dataset.view === 'v-catalogo'));
+  const m = document.getElementById('perfil-modal');
+  if(m){ m.hidden = true; perfilAbierto = false; document.body.style.overflow = ''; }
 }
 
 // Abre una sección del cliente desde un botón que no está en el menú
