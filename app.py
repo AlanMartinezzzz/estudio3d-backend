@@ -124,7 +124,7 @@ def url_descarga(id_archivo):
 
     try:
         res = (cliente_con_token(token).table("archivos")
-               .select("s3_key, nombre_archivo").eq("id_archivo", id_archivo).limit(1).execute())
+        .select("s3_key, nombre_archivo").eq("id_archivo", id_archivo).limit(1).execute())
     except Exception as e:
         app.logger.error("Error al consultar archivo: %s", e)
         return jsonify(error="No se pudo consultar el archivo"), 500

@@ -400,92 +400,160 @@ function initCliente(){
   });
 }
 
-// Completa todos los campos de la pantalla "Mi Perfil" automáticamente
+// ---------- PERFIL DEL CLIENTE ----------
+let perfilSucio = false;        // true cuando hay cambios sin guardar en el formulario
+let busquedaCatalogo = '';      // texto del buscador de la barra superior
+
+// Datos extra (dirección de envío y notificaciones).
+// Si la tabla 'usuarios' ya tiene las columnas, viven en Supabase; si no, se guardan en este navegador.
+function leerExtraPerfil(){
+  const p = state.perfil || {};
+  const base = { direccion:'', ciudad_envio:'', codigo_postal:'', notif_correo:true };
+  if('direccion' in p){
+    return { direccion:p.direccion||'', ciudad_envio:p.ciudad_envio||'', codigo_postal:p.codigo_postal||'', notif_correo:p.notif_correo !== false };
+  }
+  try{
+    const raw = localStorage.getItem('perfil_extra_' + p.id_user);
+    if(raw) return Object.assign(base, JSON.parse(raw));
+  }catch(e){}
+  return base;
+}
+
 function rellenarPerfil(){
   const p = state.perfil;
   if(!p) return;
+  const $ = id => document.getElementById(id);
+  const setText = (id, v) => { const el = $(id); if(el) el.textContent = v; };
 
-  const setVal = (selectors, val) => {
-    selectors.forEach(sel => {
-      const el = document.getElementById(sel) || document.querySelector(sel);
-      if(el && document.activeElement !== el) {
-        el.value = val || '';
-      }
-    });
-  };
+  const nombre = p.nombre || p.full_name || '';
+  const correo = p.correo || p.email || '';
+  const tel    = p.telefono || p.phone || '';
+  const ciudad = p.ciudad || '';
+  const x = leerExtraPerfil();
 
-  const nombreVal = p.nombre || p.full_name || '';
-  const correoVal = p.correo || p.email || '';
-  const telVal = p.telefono || p.phone || '';
-  const ciudadVal = p.ciudad || '';
+  // --- Tarjeta de identidad (siempre se actualiza) ---
+  const visible = nombre || correo.split('@')[0] || 'Cliente';
+  const inicial = (nombre || correo || '?').trim().charAt(0).toUpperCase();
+  setText('pf-avatar', inicial);
+  setText('pf-avatar-top', inicial);
+  setText('pf-nombre-card', visible);
+  setText('pf-nombre-top', visible);
+  setText('pf-correo-card', correo);
+  setText('pf-stat-archivos', state.archivos.length);
+  setText('pf-stat-pedidos', state.pedidos.filter(o => o.estado === 'entregado').length);
 
-  // Rellenar tanto los IDs pf-* como profile-* o por Placeholder
-  setVal(['pf-nombre', 'profile-name', 'input[placeholder="Tu nombre"]'], nombreVal);
-  setVal(['pf-correo', 'profile-email', 'input[placeholder="tu@correo.com"]'], correoVal);
-  setVal(['pf-tel', 'profile-phone', 'input[placeholder="+502 0000 0000"]'], telVal);
-  setVal(['pf-ciudad', 'profile-city', 'input[placeholder="Tu ciudad"]'], ciudadVal);
+  // --- Qué tan completo está el perfil ---
+  const piezas = [['nombre', nombre], ['teléfono', tel], ['ciudad', ciudad], ['dirección de envío', x.direccion]];
+  const faltan = piezas.filter(([, v]) => !String(v || '').trim()).map(([k]) => k);
+  const pct = Math.round(((piezas.length - faltan.length) / piezas.length) * 100);
+  setText('pf-pct', pct + '%');
+  const bar = $('pf-pct-bar'); if(bar) bar.style.width = pct + '%';
+  setText('pf-pct-hint', faltan.length ? 'Te falta: ' + faltan.join(', ') + '.' : 'Todo listo para tus envíos.');
 
-  // Inhabilitar modificación directa del correo
-  ['pf-correo', 'profile-email', 'input[placeholder="tu@correo.com"]'].forEach(sel => {
-    const el = document.getElementById(sel) || document.querySelector(sel);
-    if(el) {
-      el.readOnly = true;
-      el.style.opacity = '0.7';
-    }
-  });
+  // --- Campos del formulario (no se pisan si hay cambios sin guardar) ---
+  if(perfilSucio) return;
+  const setVal = (id, val) => { const el = $(id); if(el && document.activeElement !== el) el.value = val || ''; };
+  setVal('pf-nombre', nombre);
+  setVal('pf-correo', correo);
+  setVal('pf-tel', tel);
+  setVal('pf-ciudad', ciudad);
+  setVal('pf-dir', x.direccion);
+  setVal('pf-ciudad-envio', x.ciudad_envio);
+  setVal('pf-cp', x.codigo_postal);
+  const sw = $('pf-notif'); if(sw) sw.checked = x.notif_correo;
+}
+
+function marcarPerfilSucio(){
+  perfilSucio = true;
+  const bar = document.getElementById('savebar');
+  if(bar) bar.hidden = false;
+}
+
+function descartarPerfil(){
+  perfilSucio = false;
+  const bar = document.getElementById('savebar');
+  if(bar) bar.hidden = true;
+  rellenarPerfil();
 }
 
 // Guarda los cambios del usuario en Supabase
 async function guardarPerfil(event) {
   if (event) event.preventDefault();
-
+  const btn = document.getElementById('btnGuardarPerfil');
   try {
-    if (typeof supabase === 'undefined' || !supabase) {
-      toast("Error: No hay conexión con la base de datos");
-      return;
-    }
-
+    if (typeof supabase === 'undefined' || !supabase) { toast("Error: No hay conexión con la base de datos"); return; }
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      toast("Debes iniciar sesión para guardar los cambios");
-      return;
+    if (!user) { toast("Debes iniciar sesión para guardar los cambios"); return; }
+    if (!state.perfil) { toast("No se encontró tu perfil"); return; }
+
+    const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+    const datos = {
+      nombre:   val('pf-nombre') || state.perfil.nombre,
+      telefono: val('pf-tel') || null,
+      ciudad:   val('pf-ciudad') || null
+    };
+    const extra = {
+      direccion:     val('pf-dir'),
+      ciudad_envio:  val('pf-ciudad-envio'),
+      codigo_postal: val('pf-cp'),
+      notif_correo:  !!document.getElementById('pf-notif').checked
+    };
+    const columnasExtra = 'direccion' in state.perfil;
+    if(columnasExtra){
+      datos.direccion     = extra.direccion || null;
+      datos.ciudad_envio  = extra.ciudad_envio || null;
+      datos.codigo_postal = extra.codigo_postal || null;
+      datos.notif_correo  = extra.notif_correo;
     }
 
-    const getVal = (selectors) => {
-      for (const sel of selectors) {
-        const el = document.getElementById(sel) || document.querySelector(sel);
-        if (el && el.value.trim() !== '') return el.value.trim();
-      }
-      return '';
-    };
-
-    const nombre = getVal(['pf-nombre', 'profile-name', 'input[placeholder="Tu nombre"]']);
-    const telefono = getVal(['pf-tel', 'profile-phone', 'input[placeholder="+502 0000 0000"]']);
-    const ciudad = getVal(['pf-ciudad', 'profile-city', 'input[placeholder="Tu ciudad"]']);
-    const correo = user.email || (state.perfil ? state.perfil.correo : '');
-
-    toast("Guardando cambios...");
-
-    if (!state.perfil) { toast("No se encontró tu perfil"); return; }
-    const datosPerfil = { nombre: nombre || state.perfil.nombre, telefono: telefono || null, ciudad: ciudad || null };
-
-    const { error } = await supabase
-      .from('usuarios')
-      .update(datosPerfil)
-      .eq('id_user', state.perfil.id_user);
+    if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
+    const { error } = await supabase.from('usuarios').update(datos).eq('id_user', state.perfil.id_user);
 
     if (error) {
       console.error("Error al guardar en Supabase:", error);
       toast("Error al guardar: " + error.message);
-    } else {
-      Object.assign(state.perfil, datosPerfil);
-      rellenarPerfil();
-      toast("¡Perfil guardado correctamente!");
+      return;
     }
+    if(!columnasExtra){
+      try{ localStorage.setItem('perfil_extra_' + state.perfil.id_user, JSON.stringify(extra)); }catch(e){}
+    }
+    Object.assign(state.perfil, datos);
+    perfilSucio = false;
+    document.getElementById('savebar').hidden = true;
+    rellenarPerfil();
+    toast("¡Perfil guardado correctamente!");
   } catch (err) {
     console.error("Excepción al guardar perfil:", err);
     toast("Ocurrió un error al guardar tu información");
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = 'Guardar cambios'; }
   }
+}
+
+// Envía un correo para cambiar la contraseña
+async function cambiarPassword(){
+  const correo = state.perfil && state.perfil.correo;
+  if(!correo){ toast('No encontramos tu correo'); return; }
+  const { error } = await supabase.auth.resetPasswordForEmail(correo);
+  toast(error ? 'No se pudo enviar el correo: ' + error.message : 'Te enviamos un correo para cambiar tu contraseña');
+}
+
+// Abre una sección del cliente desde un botón que no está en el menú
+function irAVista(viewId){
+  const btn = document.querySelector('#app-cliente .side-btn[data-view="' + viewId + '"]');
+  showView('cliente', viewId, btn);
+}
+
+// Buscador de la barra superior: filtra el catálogo
+function buscarGlobal(e){
+  e.preventDefault();
+  busquedaCatalogo = document.getElementById('buscador').value.trim().toLowerCase();
+  irAVista('v-catalogo');
+}
+function limpiarBusqueda(){
+  busquedaCatalogo = '';
+  const i = document.getElementById('buscador'); if(i) i.value = '';
+  renderCatalogo();
 }
 
 function populateSelects(){
@@ -897,7 +965,11 @@ function renderCatalogo(){
     grid.innerHTML = `<div class="empty">El negocio aún no ha publicado productos.</div>`;
     return;
   }
-  grid.innerHTML = state.productos.map(p => `
+  const q = busquedaCatalogo;
+  const lista = q ? state.productos.filter(p => ((p.nombre||'') + ' ' + (p.desc||'')).toLowerCase().includes(q)) : state.productos;
+  const aviso = q ? `<div class="small-note" style="grid-column:1/-1;margin:0 0 4px;">${lista.length} resultado(s) para «${esc(q)}» · <a href="#" onclick="limpiarBusqueda();return false;" style="color:var(--green);">Ver todo</a></div>` : '';
+  if(q && !lista.length){ grid.innerHTML = aviso + `<div class="empty" style="grid-column:1/-1;">No encontramos productos con ese nombre.</div>`; return; }
+  grid.innerHTML = aviso + lista.map(p => `
     <div class="prod-card"><h4>${esc(p.nombre)}</h4><p>${esc(p.desc)}</p><div class="price">${Q(p.precio)}</div>
     <p class="small-note">${p.existencias > 0 ? p.existencias + ' disponibles' : ''}</p>
     ${p.existencias > 0
