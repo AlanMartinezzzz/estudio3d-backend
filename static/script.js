@@ -189,22 +189,6 @@ async function iniciarSesion() {
   } catch (err) { console.error("Excepción al iniciar sesión:", err); }
 }
 
-// ===================== INICIAR SESIÓN CON GOOGLE =====================
-async function iniciarSesionGoogle() {
-  if (!supabase) await initSupabase();
-  if (!supabase) return;
-  try {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin
-      }
-    });
-    if (error) alert("Error al conectar con Google: " + error.message);
-  } catch (err) {
-    console.error("Excepción con Google Auth:", err);
-  }
-}
 
 async function registrarse() {
   if (!supabase) await initSupabase();

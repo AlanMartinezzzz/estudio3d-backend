@@ -407,13 +407,6 @@ select{color-scheme:dark;}
   .modal-body{padding:16px 16px calc(24px + env(safe-area-inset-bottom, 0px));}
 }
 
-/* ---- Entrar con Google ---- */
-.auth-sep{display:flex; align-items:center; gap:12px; margin:4px 0 12px; color:var(--text-faint); font-size:12px;}
-.auth-sep::before, .auth-sep::after{content:''; flex:1; height:1px; background:var(--line);}
-.btn-google{width:100%; min-height:44px; display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:10px; padding:10px 16px; border-radius:7px; border:1px solid #8e918f; background:#131314; color:#e3e3e3; font-size:14px; font-weight:500; font-family:inherit; cursor:pointer; transition:background .12s, border-color .12s;}
-.btn-google:hover{background:#1c1d1f; border-color:#c4c7c5;}
-.btn-google:focus-visible{outline:2px solid var(--green); outline-offset:2px;}
-
 /* ---- foto de perfil ---- */
 .avatar-wrap{position:relative; width:92px; height:92px;}
 .cam-btn{position:absolute; right:-4px; bottom:-4px; width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:50%; border:2px solid var(--bg-raised); background:var(--bg-inset); color:var(--text); cursor:pointer; transition:background .12s, color .12s;}
