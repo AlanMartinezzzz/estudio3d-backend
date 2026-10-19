@@ -152,6 +152,7 @@ async function mostrarApp(role) {
 function showView(app, viewId, btn) {
   const contenedor = document.getElementById(app === 'negocio' ? 'app-negocio' : 'app-cliente');
   if (!contenedor) return;
+  cerrarMenu();                                   // en celular el panel se cierra al elegir una sección
   contenedor.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   contenedor.querySelectorAll('.side-btn').forEach(b => b.classList.remove('active'));
   const vista = document.getElementById(viewId);
@@ -291,12 +292,18 @@ async function cargarCliente(){
   const { data: { user } } = await supabase.auth.getUser();
   if(!user) return;
 
-  // ¿Entró con Google o con correo y contraseña?
+  // ¿Tiene Google vinculado? ¿Tiene contraseña? (Supabase junta ambas en una sola cuenta si el correo es el mismo)
   const ap = user.app_metadata || {};
-  const provs = ap.providers || (ap.provider ? [ap.provider] : []);
-  state.esSoloGoogle = provs.indexOf('google') !== -1 && provs.indexOf('email') === -1;
+  const provs = (ap.providers || (ap.provider ? [ap.provider] : [])).slice();
+  const ids = user.identities || [];
+  ids.forEach(i => { if(i.provider && provs.indexOf(i.provider) === -1) provs.push(i.provider); });
+  state.tieneGoogle   = provs.indexOf('google') !== -1;
+  state.tienePassword = provs.indexOf('email') !== -1;
+  state.esSoloGoogle  = state.tieneGoogle && !state.tienePassword;
   const um = user.user_metadata || {};
-  state.fotoGoogle = state.esSoloGoogle ? (um.avatar_url || um.picture || '') : '';
+  const gi = ids.filter(i => i.provider === 'google')[0];
+  const gd = (gi && gi.identity_data) || {};
+  state.fotoGoogle = state.tieneGoogle ? (um.avatar_url || um.picture || gd.avatar_url || gd.picture || '') : '';
 
   // La fila de 'usuarios' la crea el trigger al registrarse (correo o Google)
   let per = await supabase.from('usuarios').select('*').eq('auth_id', user.id).maybeSingle();
@@ -458,6 +465,44 @@ function errDireccion(v){
   if(s.length > 150) return 'La dirección es muy larga (máximo 150 caracteres)';
   return '';
 }
+// ---------- Nombre de perfil: formato y palabras no permitidas ----------
+const MAX_FOTO_MB = 5;          // peso máximo de la foto que elige el cliente
+const FOTO_PX = 256;            // la foto se recorta a un cuadrado de 256 x 256 antes de subirla
+
+// Lista base (español, jerga guatemalteca, inglés). Agrega o quita palabras aquí.
+// Se compara palabra por palabra, así que apellidos como "Pulido" no se confunden.
+const PALABRAS_PROHIBIDAS = [
+  'puta','puto','putas','putos','putada','hijueputa','hdp','ptm','pendejo','pendeja','pendejada',
+  'cabron','cabrona','chinga','chingar','chingada','chingado','chingue','mierda','carajo','verga','pinga',
+  'culo','culero','culera','culiado','marica','maricon','mamon','mamona','zorra','perra','idiota','imbecil',
+  'estupido','estupida','malparido','malparida','gonorrea','joder','jodido','cojones','ojete','pinche',
+  'huevon','huevona','conchatumadre','mamaguevo','sexo','porno','nazi','hitler','violador','violacion',
+  'asesino','terrorista','narco','admin','administrador','staff',
+  'fuck','fucker','fucking','shit','bitch','asshole','bastard','cunt','whore','slut','nigger','nigga',
+  'faggot','retard','rapist','pussy'
+];
+function _normNombre(s){
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]+/g, ' ').trim();
+}
+function _colapsar(t){ return t.replace(/(.)\1+/g, '$1'); }          // "puuuuta" -> "puta"
+const _PROHIBIDAS = new Set(PALABRAS_PROHIBIDAS.map(w => _colapsar(_normNombre(w))));
+function nombreInapropiado(nombre){
+  const tokens = _normNombre(nombre).split(' ').filter(Boolean).map(_colapsar);
+  const pegadas = []; let run = '';                                   // "p u t a" -> "puta"
+  tokens.forEach(t => { if(t.length === 1) run += t; else { if(run.length >= 3) pegadas.push(run); run = ''; } });
+  if(run.length >= 3) pegadas.push(run);
+  return tokens.concat(pegadas).some(t => _PROHIBIDAS.has(t) || _PROHIBIDAS.has(t.replace(/e?s$/, '')));
+}
+function errNombre(v){
+  const s = String(v || '').normalize('NFC').replace(/\s+/g, ' ').trim();
+  if(s.length < 2 || s.length > 40) return 'Escribe tu nombre (entre 2 y 40 caracteres)';
+  if(!/^\p{L}[\p{L} .'’-]*$/u.test(s)) return 'Usa solo letras, espacios, guiones y apóstrofes';
+  if((s.match(/\p{L}/gu) || []).length < 2 || /(.)\1{3,}/u.test(s)) return 'Ese nombre no parece real';
+  if(/(https?|www|\.com|\.net|\.org)/i.test(s)) return 'No se permiten enlaces en el nombre';
+  if(nombreInapropiado(s)) return 'Ese nombre no está permitido. Usa tu nombre real.';
+  return '';
+}
+
 function errCP(v){
   const s = String(v || '').trim();
   return (s && !/^\d{5}$/.test(s)) ? 'El código postal tiene 5 dígitos' : '';
@@ -508,15 +553,22 @@ function rellenarPerfil(){
   // --- Tarjeta de identidad (siempre se actualiza) ---
   const visible = nombre || correo.split('@')[0] || 'Cliente';
   const inicial = (nombre || correo || '?').trim().charAt(0).toUpperCase();
-  pintarAvatar($('pf-avatar'), inicial, state.fotoGoogle);
-  pintarAvatar($('pf-avatar-top'), inicial, state.fotoGoogle);
+  const propia = leerAvatarPropio();
+  const foto = propia || state.fotoGoogle;
+  pintarAvatar($('pf-avatar'), inicial, foto);
+  pintarAvatar($('pf-avatar-top'), inicial, foto);
+  const qf = $('pf-quitar-foto'); if(qf) qf.hidden = !propia;
 
   // Cuenta de Google: no hay contraseña que cambiar aquí
-  const g = !!state.esSoloGoogle;
-  const via = $('pf-via'); if(via) via.hidden = !g;
-  const bp = $('pf-btn-pass'); if(bp) bp.hidden = g;
-  const ag = $('pf-acceso-google'); if(ag) ag.hidden = !g;
-  setText('pf-correo-help', g ? 'Es el correo de tu cuenta de Google y no se puede cambiar.' : 'El correo es tu acceso y no se puede cambiar.');
+  const gSolo = !!state.esSoloGoogle, gAlgo = !!state.tieneGoogle;
+  const via = $('pf-via'); if(via) via.hidden = !gAlgo;
+  setText('pf-via-txt', gSolo ? 'Conectado con Google' : 'Google vinculado');
+  const bp = $('pf-btn-pass'); if(bp) bp.hidden = gSolo;
+  const ag = $('pf-acceso-google'); if(ag) ag.hidden = !gAlgo;
+  setText('pf-google-txt', gSolo
+    ? 'Inicias sesión con Google, así que tu contraseña y la seguridad de tu acceso se administran desde tu cuenta de Google.'
+    : 'Tu cuenta también está vinculada con Google. Puedes entrar con cualquiera de los dos; la contraseña de aquí la cambias con el botón de arriba.');
+  setText('pf-correo-help', gSolo ? 'Es el correo de tu cuenta de Google y no se puede cambiar.' : 'El correo es tu acceso y no se puede cambiar.');
   setText('pf-nombre-card', visible);
   setText('pf-nombre-top', visible);
   setText('pf-correo-card', correo);
@@ -571,7 +623,7 @@ function validarFormularioPerfil(opts){
   const exigir = opts.envio !== undefined;
   const v = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
   const err = {};
-  if(v('pf-nombre').length < 2) err['pf-nombre'] = 'Escribe tu nombre';
+  { const m = errNombre(v('pf-nombre')); if(m) err['pf-nombre'] = m; }
   if(v('pf-tel') || exigir){ const m = errTelGT(v('pf-tel')); if(m) err['pf-tel'] = m; }
   if(v('pf-ciudad') || exigir){ const m = errCiudad(v('pf-ciudad')); if(m) err['pf-ciudad'] = m; }
   const dir = v('pf-dir'), ce = v('pf-ciudad-envio'), cp = v('pf-cp');
@@ -592,6 +644,7 @@ function validarFormularioPerfil(opts){
 
 function alEscribirPerfil(e){
   const t = e && e.target;
+  if(t && t.type === 'file') return;
   if(t && t.id){
     if(t.id === 'pf-tel'){ const f = formatearTelGT(t.value); if(f !== t.value) t.value = f; }
     if(t.id === 'pf-cp'){ t.value = t.value.replace(/\D/g, '').slice(0, 5); }
@@ -652,7 +705,7 @@ async function guardarPerfil(event) {
 
     const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
     const datos = {
-      nombre:   val('pf-nombre') || state.perfil.nombre,
+      nombre:   val('pf-nombre').replace(/\s+/g, ' ') || state.perfil.nombre,
       telefono: val('pf-tel') ? formatearTelGT(val('pf-tel')) : null,
       ciudad:   val('pf-ciudad') || null
     };
@@ -744,6 +797,89 @@ document.addEventListener('keydown', e => {
   }
 });
 
+// ---------- Foto de perfil (Supabase Storage, bucket 'avatars') ----------
+function leerAvatarPropio(){
+  const p = state.perfil || {};
+  if('avatar_url' in p) return p.avatar_url || '';
+  try{ return localStorage.getItem('perfil_avatar_' + p.id_user) || ''; }catch(e){ return ''; }
+}
+
+async function guardarAvatarUrl(url){
+  const p = state.perfil;
+  if('avatar_url' in p){
+    const { error } = await supabase.from('usuarios').update({ avatar_url: url || null }).eq('id_user', p.id_user);
+    if(error) throw error;
+    p.avatar_url = url || null;
+  } else {
+    try{ if(url) localStorage.setItem('perfil_avatar_' + p.id_user, url); else localStorage.removeItem('perfil_avatar_' + p.id_user); }catch(e){}
+  }
+}
+
+// Recorta al centro en cuadrado y reduce a FOTO_PX: la foto pesa unos 20-40 KB
+function procesarFoto(file){
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const lado = Math.min(img.naturalWidth, img.naturalHeight);
+      if(!lado) return reject(new Error('La imagen está vacía'));
+      const c = document.createElement('canvas');
+      c.width = c.height = FOTO_PX;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, FOTO_PX, FOTO_PX);
+      ctx.drawImage(img, (img.naturalWidth - lado) / 2, (img.naturalHeight - lado) / 2, lado, lado, 0, 0, FOTO_PX, FOTO_PX);
+      c.toBlob(b => b ? resolve(b) : reject(new Error('No se pudo procesar la imagen')), 'image/jpeg', 0.85);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo leer la imagen')); };
+    img.src = url;
+  });
+}
+
+function elegirFoto(){ const i = document.getElementById('pf-foto-input'); if(i) i.click(); }
+
+async function alElegirFoto(e){
+  const input = e.target, file = input.files && input.files[0];
+  input.value = '';
+  if(!file) return;
+  if(['image/jpeg', 'image/png', 'image/webp'].indexOf(file.type) === -1){ toast('Usa una foto JPG, PNG o WebP'); return; }
+  if(file.size > MAX_FOTO_MB * 1024 * 1024){ toast(`La foto pesa más de ${MAX_FOTO_MB} MB`); return; }
+  const cam = document.getElementById('pf-cam');
+  try{
+    if(typeof supabase === 'undefined' || !supabase){ toast('No hay conexión con la base de datos'); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    if(!user){ toast('Inicia sesión de nuevo para cambiar tu foto'); return; }
+    if(cam) cam.disabled = true;
+    toast('Subiendo foto...');
+    const blob = await procesarFoto(file);
+    const ruta = user.id + '/avatar.jpg';
+    const { error } = await supabase.storage.from('avatars').upload(ruta, blob, { upsert: true, contentType: 'image/jpeg', cacheControl: '3600' });
+    if(error) throw error;
+    const base = supabase.storage.from('avatars').getPublicUrl(ruta).data.publicUrl;
+    await guardarAvatarUrl(base + '?v=' + Date.now());     // ?v= evita ver la foto vieja guardada en caché
+    rellenarPerfil();
+    toast('¡Foto actualizada!');
+  }catch(err){
+    console.error('Error al subir la foto:', err);
+    toast('No se pudo subir la foto: ' + (err.message || err));
+  }finally{
+    if(cam) cam.disabled = false;
+  }
+}
+
+async function quitarFoto(){
+  try{
+    const { data: { user } } = await supabase.auth.getUser();
+    if(user) await supabase.storage.from('avatars').remove([user.id + '/avatar.jpg']);
+    await guardarAvatarUrl('');
+    rellenarPerfil();
+    toast('Foto eliminada');
+  }catch(err){
+    console.error('Error al quitar la foto:', err);
+    toast('No se pudo quitar la foto: ' + (err.message || err));
+  }
+}
+
 // Muestra la foto (la de Google, si hay) y, si no carga, la inicial
 function pintarAvatar(el, inicial, foto){
   if(!el) return;
@@ -766,6 +902,62 @@ function mostrarVistaInicial(){
   const m = document.getElementById('perfil-modal');
   if(m){ m.hidden = true; perfilAbierto = false; document.body.style.overflow = ''; }
 }
+
+// ---------- Menú lateral ----------
+// Computadora: se contrae a una barra de iconos y recuerda la elección. Celular: panel que sale desde la izquierda.
+const MQ_MOVIL = window.matchMedia('(max-width: 900px)');
+let menuFocoPrevio = null;
+
+function actualizarBotonMenu(app){
+  const b = app.querySelector('.side-collapse'); if(!b) return;
+  const col = app.classList.contains('menu-colapsado');
+  const t = MQ_MOVIL.matches ? 'Cerrar menú' : (col ? 'Expandir menú' : 'Contraer menú');
+  b.setAttribute('aria-label', t); b.title = t;
+  b.setAttribute('aria-expanded', String(MQ_MOVIL.matches ? app.classList.contains('menu-abierto') : !col));
+}
+
+function alternarMenu(btn){
+  const app = btn.closest('.app');
+  if(MQ_MOVIL.matches){ cerrarMenu(app); return; }
+  app.classList.toggle('menu-colapsado');
+  try{ localStorage.setItem('menu_colapsado_' + app.id, app.classList.contains('menu-colapsado') ? '1' : '0'); }catch(e){}
+  actualizarBotonMenu(app);
+}
+
+function abrirMenu(btn){
+  const app = btn.closest('.app'); if(!app) return;
+  menuFocoPrevio = btn;
+  app.classList.add('menu-abierto');
+  document.body.style.overflow = 'hidden';
+  actualizarBotonMenu(app);
+  const activo = app.querySelector('.sidebar .side-btn.active') || app.querySelector('.sidebar .side-btn');
+  if(activo) setTimeout(() => activo.focus(), 60);
+}
+
+function cerrarMenu(app){
+  app = app || document.querySelector('.app.menu-abierto');
+  if(!app || !app.classList.contains('menu-abierto')) return;
+  app.classList.remove('menu-abierto');
+  if(!perfilAbierto) document.body.style.overflow = '';
+  actualizarBotonMenu(app);
+  if(menuFocoPrevio && menuFocoPrevio.focus) menuFocoPrevio.focus();
+}
+
+function iniciarMenus(){
+  document.querySelectorAll('.app').forEach(app => {
+    let col = false;
+    try{ col = localStorage.getItem('menu_colapsado_' + app.id) === '1'; }catch(e){}
+    app.classList.toggle('menu-colapsado', col);
+    app.querySelectorAll('.side-btn').forEach(b => { const l = b.querySelector('.lbl'); if(l) b.title = l.textContent.trim(); });   // texto al pasar el mouse cuando está contraído
+    actualizarBotonMenu(app);
+  });
+}
+(MQ_MOVIL.addEventListener ? MQ_MOVIL.addEventListener.bind(MQ_MOVIL) : MQ_MOVIL.addListener.bind(MQ_MOVIL))('change', () => {
+  cerrarMenu();
+  document.querySelectorAll('.app').forEach(actualizarBotonMenu);
+});
+document.addEventListener('keydown', e => { if(e.key === 'Escape') cerrarMenu(); });
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciarMenus); else iniciarMenus();
 
 // Abre una sección del cliente desde un botón que no está en el menú
 function irAVista(viewId){
