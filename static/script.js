@@ -491,6 +491,9 @@ function errCP(v){
   const s = String(v || '').trim();
   return (s && !/^\d{5}$/.test(s)) ? 'El código postal tiene 5 dígitos' : '';
 }
+function errNotas(v){
+  return String(v || '').trim().length > 200 ? 'Las notas son muy largas (máximo 200 caracteres)' : '';
+}
 
 // ---------- PERFIL DEL CLIENTE ----------
 let perfilSucio = false;        // true cuando hay cambios sin guardar en el formulario
@@ -501,15 +504,15 @@ let busquedaCatalogo = '';      // texto del buscador de la barra superior
 // Si la tabla 'usuarios' ya tiene las columnas, viven en Supabase; si no, se guardan en este navegador.
 function leerExtraPerfil(){
   const p = state.perfil || {};
-  const base = { direccion:'', ciudad_envio:'', codigo_postal:'', notif_correo:true };
+  let guardado = {};
+  try{ guardado = JSON.parse(localStorage.getItem('perfil_extra_' + p.id_user) || '{}') || {}; }catch(e){}
+  // Las notas de residencia viven en Supabase solo si la columna 'notas_residencia' ya existe
+  const notas = ('notas_residencia' in p) ? (p.notas_residencia || '') : (guardado.notas_residencia || '');
+  const base = { direccion:'', ciudad_envio:'', codigo_postal:'', notas_residencia:'', notif_correo:true };
   if('direccion' in p){
-    return { direccion:p.direccion||'', ciudad_envio:p.ciudad_envio||'', codigo_postal:p.codigo_postal||'', notif_correo:p.notif_correo !== false };
+    return { direccion:p.direccion||'', ciudad_envio:p.ciudad_envio||'', codigo_postal:p.codigo_postal||'', notas_residencia:notas, notif_correo:p.notif_correo !== false };
   }
-  try{
-    const raw = localStorage.getItem('perfil_extra_' + p.id_user);
-    if(raw) return Object.assign(base, JSON.parse(raw));
-  }catch(e){}
-  return base;
+  return Object.assign(base, guardado, { notas_residencia: notas });
 }
 
 function poblarCiudades(){
@@ -577,6 +580,7 @@ function rellenarPerfil(){
     setVal('pf-dir', x.direccion);
     setVal('pf-ciudad-envio', x.ciudad_envio);
     setVal('pf-cp', x.codigo_postal);
+    setVal('pf-notas', x.notas_residencia);
     const sw = $('pf-notif'); if(sw) sw.checked = x.notif_correo;
   }
   if(validarAlMostrar){ const o = validarAlMostrar; validarAlMostrar = null; validarFormularioPerfil(o); }
@@ -616,8 +620,9 @@ function validarFormularioPerfil(opts){
     const m2 = errCiudad(ce);     if(m2) err['pf-ciudad-envio'] = m2;
   }
   const m3 = errCP(cp); if(m3) err['pf-cp'] = m3;
+  const m4 = errNotas(v('pf-notas')); if(m4) err['pf-notas'] = m4;
 
-  ['pf-nombre', 'pf-tel', 'pf-ciudad', 'pf-dir', 'pf-ciudad-envio', 'pf-cp'].forEach(id => setError(id, err[id] || ''));
+  ['pf-nombre', 'pf-tel', 'pf-ciudad', 'pf-dir', 'pf-ciudad-envio', 'pf-cp', 'pf-notas'].forEach(id => setError(id, err[id] || ''));
   const primero = Object.keys(err)[0];
   if(primero){
     const el = document.getElementById(primero);
@@ -697,15 +702,18 @@ async function guardarPerfil(event) {
       direccion:     val('pf-dir').replace(/\s+/g, ' '),
       ciudad_envio:  val('pf-ciudad-envio'),
       codigo_postal: val('pf-cp'),
+      notas_residencia: val('pf-notas').replace(/\s+/g, ' '),
       notif_correo:  !!document.getElementById('pf-notif').checked
     };
     const columnasExtra = 'direccion' in state.perfil;
+    const columnaNotas = 'notas_residencia' in state.perfil;
     if(columnasExtra){
       datos.direccion     = extra.direccion || null;
       datos.ciudad_envio  = extra.ciudad_envio || null;
       datos.codigo_postal = extra.codigo_postal || null;
       datos.notif_correo  = extra.notif_correo;
     }
+    if(columnaNotas) datos.notas_residencia = extra.notas_residencia || null;
 
     if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
     const { error } = await supabase.from('usuarios').update(datos).eq('id_user', state.perfil.id_user);
@@ -715,7 +723,7 @@ async function guardarPerfil(event) {
       toast("Error al guardar: " + error.message);
       return;
     }
-    if(!columnasExtra){
+    if(!columnasExtra || !columnaNotas){
       try{ localStorage.setItem('perfil_extra_' + state.perfil.id_user, JSON.stringify(extra)); }catch(e){}
     }
     Object.assign(state.perfil, datos);
@@ -761,7 +769,7 @@ function cerrarPerfil(){
     if(!confirm('Tienes cambios sin guardar. ¿Descartarlos?')) return false;
     descartarPerfil();
   }
-  ['pf-nombre', 'pf-tel', 'pf-ciudad', 'pf-dir', 'pf-ciudad-envio', 'pf-cp'].forEach(id => setError(id, ''));
+  ['pf-nombre', 'pf-tel', 'pf-ciudad', 'pf-dir', 'pf-ciudad-envio', 'pf-cp', 'pf-notas'].forEach(id => setError(id, ''));
   m.hidden = true; perfilAbierto = false;
   document.body.style.overflow = '';
   if(perfilFocoPrevio && perfilFocoPrevio.focus) perfilFocoPrevio.focus();
@@ -1917,4 +1925,4 @@ function renderPedidosNegocioTable(){
       ${opciones.map(o=>`<option value="${o}" ${o===c.estado?'selected':''}>${etiquetas[o]}</option>`).join('')}
     </select></td><td>${c.fecha}</td></tr>
   `).join('');
-}
+} 
