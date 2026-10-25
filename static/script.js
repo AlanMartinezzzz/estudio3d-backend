@@ -2016,7 +2016,7 @@ function renderPedidosNegocioTable(){
   const etiquetas = { pendiente:'Pendiente', progreso:'En progreso', entregado:'Entregado', cancelado:'Cancelado' };
   tb.innerHTML = state.carritosNegocio.map(c=>`
     <tr><td class="strong">${c.label}</td><td>${esc(c.cliente)}</td>
-    <td>${esc(c.items.map(i=>`${i.nombre} ×${i.cantidad}`).join(', '))}</td>
+    <td>${esc(c.items.map(i=>`${i.nombre} x ${i.cantidad}`).join(', '))}</td>
     <td class="strong">${Q(c.total)}</td>
     <td><select onchange="cambiarEstadoCarrito(${c.id}, this.value)">
       ${opciones.map(o=>`<option value="${o}" ${o===c.estado?'selected':''}>${etiquetas[o]}</option>`).join('')}
