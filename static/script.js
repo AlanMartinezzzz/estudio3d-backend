@@ -168,12 +168,45 @@ async function exitApp() {
   location.reload();   // limpia lo que estaba en memoria de esa sesión
 }
 
-function enviarMensaje() {
+// ---------- Contacto: el mensaje se envía a una función AWS Lambda ----------
+// Pega aquí la "URL de función" de tu Lambda (termina en .lambda-url.REGIÓN.on.aws/).
+const CONTACTO_URL = 'https://ooc3kvsndc2ccx3agvgjk44dca0dfvbi.lambda-url.us-east-2.on.aws/';
+let enviandoMensaje = false;
+
+async function enviarMensaje() {
+  if (enviandoMensaje) return;
   const asunto = document.getElementById('msg-asunto');
   const cuerpo = document.getElementById('msg-cuerpo');
-  if (!asunto.value.trim() || !cuerpo.value.trim()) { toast('Completa el asunto y el mensaje'); return; }
-  asunto.value = ''; cuerpo.value = '';
-  toast('Mensaje enviado al negocio');
+  const a = asunto.value.trim(), m = cuerpo.value.trim();
+  if (a.length < 3 || m.length < 10) { toast('Escribe un asunto (mínimo 3 letras) y un mensaje (mínimo 10 letras)'); return; }
+  if (a.length > 100 || m.length > 1000) { toast('El asunto admite hasta 100 caracteres y el mensaje hasta 1000'); return; }
+  if (!CONTACTO_URL) { toast('El formulario de contacto todavía no está conectado'); return; }
+
+  const btn = document.getElementById('btnEnviarMsg');
+  enviandoMensaje = true;
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { toast('Inicia sesión de nuevo para enviar tu mensaje'); return; }
+    const p = state.perfil || {};
+    const res = await fetch(CONTACTO_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+      body: JSON.stringify({ nombre: p.nombre || '', telefono: p.telefono || '', asunto: a, mensaje: m })
+    });
+    let data = {};
+    try { data = await res.json(); } catch (e) {}
+    if (res.ok) { asunto.value = ''; cuerpo.value = ''; toast('Mensaje enviado. Te responderemos pronto.'); }
+    else if (res.status === 429) toast('Enviaste varios mensajes seguidos. Intenta de nuevo en un rato.');
+    else if (res.status === 401) toast('Tu sesión venció. Inicia sesión de nuevo.');
+    else toast(data.error || 'No se pudo enviar el mensaje. Intenta de nuevo.');
+  } catch (err) {
+    console.error('Error al enviar el mensaje:', err);
+    toast('No se pudo conectar. Revisa tu internet e intenta de nuevo.');
+  } finally {
+    enviandoMensaje = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Enviar mensaje'; }
+  }
 }
 
 async function iniciarSesion() {
@@ -189,6 +222,22 @@ async function iniciarSesion() {
   } catch (err) { console.error("Excepción al iniciar sesión:", err); }
 }
 
+// ===================== INICIAR SESIÓN CON GOOGLE =====================
+async function iniciarSesionGoogle() {
+  if (!supabase) await initSupabase();
+  if (!supabase) return;
+  try {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin
+      }
+    });
+    if (error) alert("Error al conectar con Google: " + error.message);
+  } catch (err) {
+    console.error("Excepción con Google Auth:", err);
+  }
+}
 
 async function registrarse() {
   if (!supabase) await initSupabase();
@@ -369,6 +418,7 @@ function refrescarCliente(){
   populateSelects();
   renderArchivos();
   renderCatalogo();
+  restaurarCarrito();
   renderCarrito();
   renderPedidosCliente();
 }
@@ -443,6 +493,10 @@ function errCiudad(v){
   if(!String(v || '').trim()) return 'Selecciona una ciudad';
   return CIUDADES_PLANAS.indexOf(v) === -1 ? 'Elige una ciudad de la lista' : '';
 }
+function errCP(v){
+  const s = String(v || '').trim();
+  return (s && !/^\d{5}$/.test(s)) ? 'El código postal tiene 5 dígitos' : '';
+}
 function errDireccion(v){
   const s = String(v || '').trim();
   if(s.length < 10) return 'Escribe tu dirección completa (calle, zona, colonia o referencias)';
@@ -487,13 +541,6 @@ function errNombre(v){
   return '';
 }
 
-function errCP(v){
-  const s = String(v || '').trim();
-  return (s && !/^\d{5}$/.test(s)) ? 'El código postal tiene 5 dígitos' : '';
-}
-function errNotas(v){
-  return String(v || '').trim().length > 200 ? 'Las notas son muy largas (máximo 200 caracteres)' : '';
-}
 
 // ---------- PERFIL DEL CLIENTE ----------
 let perfilSucio = false;        // true cuando hay cambios sin guardar en el formulario
@@ -504,15 +551,17 @@ let busquedaCatalogo = '';      // texto del buscador de la barra superior
 // Si la tabla 'usuarios' ya tiene las columnas, viven en Supabase; si no, se guardan en este navegador.
 function leerExtraPerfil(){
   const p = state.perfil || {};
-  let guardado = {};
-  try{ guardado = JSON.parse(localStorage.getItem('perfil_extra_' + p.id_user) || '{}') || {}; }catch(e){}
-  // Las notas de residencia viven en Supabase solo si la columna 'notas_residencia' ya existe
-  const notas = ('notas_residencia' in p) ? (p.notas_residencia || '') : (guardado.notas_residencia || '');
-  const base = { direccion:'', ciudad_envio:'', codigo_postal:'', notas_residencia:'', notif_correo:true };
-  if('direccion' in p){
-    return { direccion:p.direccion||'', ciudad_envio:p.ciudad_envio||'', codigo_postal:p.codigo_postal||'', notas_residencia:notas, notif_correo:p.notif_correo !== false };
-  }
-  return Object.assign(base, guardado, { notas_residencia: notas });
+  let local = {};
+  try{ local = JSON.parse(localStorage.getItem('perfil_extra_' + p.id_user) || '{}') || {}; }catch(e){}
+  const v = k => (k in p) ? p[k] : local[k];            // si la columna existe en Supabase se usa; si no, lo guardado en este navegador
+  return {
+    direccion:     v('direccion') || '',
+    ciudad_envio:  v('ciudad_envio') || '',
+    codigo_postal: v('codigo_postal') || '',
+    residencial:   v('residencial') || '',
+    codigo_acceso: v('codigo_acceso') || '',
+    notif_correo:  v('notif_correo') !== false
+  };
 }
 
 function poblarCiudades(){
@@ -580,7 +629,8 @@ function rellenarPerfil(){
     setVal('pf-dir', x.direccion);
     setVal('pf-ciudad-envio', x.ciudad_envio);
     setVal('pf-cp', x.codigo_postal);
-    setVal('pf-notas', x.notas_residencia);
+    setVal('pf-res', x.residencial);
+    setVal('pf-codigo', x.codigo_acceso);
     const sw = $('pf-notif'); if(sw) sw.checked = x.notif_correo;
   }
   if(validarAlMostrar){ const o = validarAlMostrar; validarAlMostrar = null; validarFormularioPerfil(o); }
@@ -614,15 +664,16 @@ function validarFormularioPerfil(opts){
   { const m = errNombre(v('pf-nombre')); if(m) err['pf-nombre'] = m; }
   if(v('pf-tel') || exigir){ const m = errTelGT(v('pf-tel')); if(m) err['pf-tel'] = m; }
   if(v('pf-ciudad') || exigir){ const m = errCiudad(v('pf-ciudad')); if(m) err['pf-ciudad'] = m; }
-  const dir = v('pf-dir'), ce = v('pf-ciudad-envio'), cp = v('pf-cp');
-  if(dir || ce || cp || opts.envio){
+  const dir = v('pf-dir'), ce = v('pf-ciudad-envio'), cp = v('pf-cp'), res = v('pf-res'), cod = v('pf-codigo');
+  if(dir || ce || cp || res || cod || opts.envio){
     const m1 = errDireccion(dir); if(m1) err['pf-dir'] = m1;
     const m2 = errCiudad(ce);     if(m2) err['pf-ciudad-envio'] = m2;
   }
-  const m3 = errCP(cp); if(m3) err['pf-cp'] = m3;
-  const m4 = errNotas(v('pf-notas')); if(m4) err['pf-notas'] = m4;
+  { const m3 = errCP(cp); if(m3) err['pf-cp'] = m3; }
+  if(res.length > 80) err['pf-res'] = 'Máximo 80 caracteres';
+  if(cod.length > 60) err['pf-codigo'] = 'Máximo 60 caracteres';
 
-  ['pf-nombre', 'pf-tel', 'pf-ciudad', 'pf-dir', 'pf-ciudad-envio', 'pf-cp', 'pf-notas'].forEach(id => setError(id, err[id] || ''));
+  ['pf-nombre', 'pf-tel', 'pf-ciudad', 'pf-dir', 'pf-ciudad-envio', 'pf-cp', 'pf-res', 'pf-codigo'].forEach(id => setError(id, err[id] || ''));
   const primero = Object.keys(err)[0];
   if(primero){
     const el = document.getElementById(primero);
@@ -702,18 +753,16 @@ async function guardarPerfil(event) {
       direccion:     val('pf-dir').replace(/\s+/g, ' '),
       ciudad_envio:  val('pf-ciudad-envio'),
       codigo_postal: val('pf-cp'),
-      notas_residencia: val('pf-notas').replace(/\s+/g, ' '),
+      residencial:   val('pf-res').replace(/\s+/g, ' '),
+      codigo_acceso: val('pf-codigo').replace(/\s+/g, ' '),
       notif_correo:  !!document.getElementById('pf-notif').checked
     };
-    const columnasExtra = 'direccion' in state.perfil;
-    const columnaNotas = 'notas_residencia' in state.perfil;
-    if(columnasExtra){
-      datos.direccion     = extra.direccion || null;
-      datos.ciudad_envio  = extra.ciudad_envio || null;
-      datos.codigo_postal = extra.codigo_postal || null;
-      datos.notif_correo  = extra.notif_correo;
-    }
-    if(columnaNotas) datos.notas_residencia = extra.notas_residencia || null;
+    // Cada dato se guarda en Supabase si su columna existe; si no, se queda en este navegador
+    const enLocal = {};
+    Object.keys(extra).forEach(k => {
+      if(k in state.perfil) datos[k] = (typeof extra[k] === 'string') ? (extra[k] || null) : extra[k];
+      else enLocal[k] = extra[k];
+    });
 
     if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
     const { error } = await supabase.from('usuarios').update(datos).eq('id_user', state.perfil.id_user);
@@ -723,8 +772,12 @@ async function guardarPerfil(event) {
       toast("Error al guardar: " + error.message);
       return;
     }
-    if(!columnasExtra || !columnaNotas){
-      try{ localStorage.setItem('perfil_extra_' + state.perfil.id_user, JSON.stringify(extra)); }catch(e){}
+    if(Object.keys(enLocal).length){
+      try{
+        const clave = 'perfil_extra_' + state.perfil.id_user;
+        const previo = JSON.parse(localStorage.getItem(clave) || '{}') || {};
+        localStorage.setItem(clave, JSON.stringify(Object.assign(previo, enLocal)));
+      }catch(e){}
     }
     Object.assign(state.perfil, datos);
     perfilSucio = false;
@@ -769,7 +822,7 @@ function cerrarPerfil(){
     if(!confirm('Tienes cambios sin guardar. ¿Descartarlos?')) return false;
     descartarPerfil();
   }
-  ['pf-nombre', 'pf-tel', 'pf-ciudad', 'pf-dir', 'pf-ciudad-envio', 'pf-cp', 'pf-notas'].forEach(id => setError(id, ''));
+  ['pf-nombre', 'pf-tel', 'pf-ciudad', 'pf-dir', 'pf-ciudad-envio', 'pf-cp', 'pf-res', 'pf-codigo'].forEach(id => setError(id, ''));
   m.hidden = true; perfilAbierto = false;
   document.body.style.overflow = '';
   if(perfilFocoPrevio && perfilFocoPrevio.focus) perfilFocoPrevio.focus();
@@ -1414,7 +1467,68 @@ function agregarProductoAlCarrito(id){
   toast('Agregado al carrito');
 }
 
+// ---------- El carrito se guarda en este navegador, por cliente ----------
+function guardarCarrito(){
+  const id = state.perfil && state.perfil.id_user;
+  if(!id || state.carritoDe !== id) return;            // todavía no se ha restaurado: no pisar lo guardado
+  try{
+    localStorage.setItem('carrito_' + id, JSON.stringify(state.carrito.map(l => ({ tipo: l.tipo, ref: l.ref, cantidad: l.cantidad }))));
+  }catch(e){}
+}
+
+// Solo se guardan tipo, id y cantidad. Nombre y precio se vuelven a leer de la base,
+// así que nunca queda un precio viejo (ni uno alterado) en el carrito.
+function restaurarCarrito(){
+  const id = state.perfil && state.perfil.id_user;
+  if(!id || state.carritoDe === id) return;
+  state.carritoDe = id;
+  let guardado = [];
+  try{ guardado = JSON.parse(localStorage.getItem('carrito_' + id) || '[]'); }catch(e){}
+  if(!Array.isArray(guardado)) guardado = [];
+  const lineas = []; let descartados = 0;
+  guardado.forEach(g => {
+    if(g && g.tipo === 'producto'){
+      const p = state.productos.find(x => x.id === g.ref);
+      const cant = Math.min(Math.max(1, parseInt(g.cantidad) || 1), p ? p.existencias : 0);
+      if(!p || cant < 1){ descartados++; return; }
+      lineas.push({ tipo:'producto', ref:p.id, nombre:p.nombre, precio:p.precio, cantidad:cant });
+    } else if(g && g.tipo === 'archivo'){
+      const a = state.archivos.find(x => x.id === g.ref);
+      if(!a || a.estado !== 'aprobada'){ descartados++; return; }
+      lineas.push({ tipo:'archivo', ref:a.id, nombre:a.nombre + ' (' + a.material + ')', precio:a.precio, cantidad:1 });
+    }
+  });
+  state.carrito = lineas;
+  if(descartados) toast('Actualizamos tu carrito: algunos artículos ya no están disponibles');
+}
+
+// Resumen de entrega dentro del carrito
+function renderEntregaCarrito(){
+  const box = document.getElementById('cartEntrega');
+  const datos = document.getElementById('cartEntregaDatos');
+  if(!box || !datos) return;
+  box.hidden = !state.carrito.length;
+  if(!state.carrito.length || !state.perfil) return;
+  const x = leerExtraPerfil();
+  const falta = [];
+  if(errDireccion(x.direccion)) falta.push('dirección de entrega');
+  if(errCiudad(x.ciudad_envio)) falta.push('ciudad de entrega');
+  if(errTelGT(state.perfil.telefono)) falta.push('teléfono');
+  if(falta.length){
+    datos.innerHTML = `<p class="entrega-falta">Para confirmar tu pedido falta: <b>${esc(falta.join(', '))}</b>.</p>`;
+    return;
+  }
+  const extras = [];
+  if(x.residencial) extras.push(`<div class="entrega-dato"><b>${esc(x.residencial)}</b><span>Residencial, condominio o edificio</span></div>`);
+  if(x.codigo_acceso) extras.push(`<div class="entrega-dato"><b>${esc(x.codigo_acceso)}</b><span>Código de acceso / indicaciones</span></div>`);
+  datos.innerHTML = `<div class="entrega-dato"><b>${esc(x.direccion)}</b><span>${esc(x.ciudad_envio)}${x.codigo_postal ? ' · CP ' + esc(x.codigo_postal) : ''}</span></div>`
+    + extras.join('')
+    + `<div class="entrega-dato"><b>${esc(state.perfil.telefono)}</b><span>Teléfono de contacto</span></div>`;
+}
+
 function renderCarrito(){
+  guardarCarrito();
+  renderEntregaCarrito();
   const wrap = document.getElementById('cartLines');
   const cartCount = document.getElementById('cartCount');
   const cartTotal = document.getElementById('cartTotal');
@@ -1434,7 +1548,21 @@ function renderCarrito(){
 
 function quitarDelCarrito(i){ state.carrito.splice(i,1); renderCarrito(); }
 
+let confirmandoPedido = false;
 async function confirmarPedido(){
+  if(confirmandoPedido) return;                          // evita pedidos duplicados por doble clic
+  confirmandoPedido = true;
+  const btn = document.getElementById('btnConfirmar');
+  if(btn){ btn.disabled = true; btn.textContent = 'Enviando...'; }
+  try{ await _confirmarPedido(); }
+  catch(err){ console.error('Error al confirmar el pedido:', err); toast('No se pudo confirmar el pedido. Intenta de nuevo.'); }
+  finally{
+    confirmandoPedido = false;
+    if(btn){ btn.disabled = false; btn.textContent = 'Confirmar pedido'; }
+  }
+}
+
+async function _confirmarPedido(){
   if(!state.carrito.length){ toast('Tu carrito está vacío'); return; }
   if(!state.perfil){ toast('No se encontró tu perfil de cliente'); return; }
   if(!exigirPerfil(true)) return;           // para confirmar un pedido hace falta la dirección de entrega
@@ -1449,9 +1577,20 @@ async function confirmarPedido(){
 
   const idUser = state.perfil.id_user || state.perfil.id;
   const total = state.carrito.reduce((a,l)=>a+l.precio*l.cantidad,0);
-  const cab = await supabase.from('carritos')
-    .insert({ total, estado:'pendiente', id_usuario: idUser })
-    .select().single();
+  // Datos de entrega: se copian al pedido tal como están hoy (si el cliente cambia su perfil después, el pedido no cambia)
+  const x = leerExtraPerfil();
+  const basico = { direccion_envio: x.direccion, ciudad_envio: x.ciudad_envio, telefono_contacto: state.perfil.telefono };
+  const conCP = Object.assign({}, basico, { codigo_postal: x.codigo_postal || null });
+  const completo = Object.assign({}, conCP, { residencial: x.residencial || null, codigo_acceso: x.codigo_acceso || null });
+  const base = { total, estado:'pendiente', id_usuario: idUser };
+  // Se intenta con todos los datos de entrega; si a 'carritos' le faltan columnas, se reintenta con menos para no perder la venta
+  const intentos = [Object.assign({}, base, completo), Object.assign({}, base, conCP), Object.assign({}, base, basico), base];
+  let cab;
+  for(let i = 0; i < intentos.length; i++){
+    cab = await supabase.from('carritos').insert(intentos[i]).select().single();
+    if(!(cab.error && (cab.error.code === 'PGRST204' || /column/i.test(cab.error.message || '')))) break;
+    console.warn("Faltan columnas de entrega en 'carritos'. Ejecuta el SQL para que el negocio vea todos los datos.");
+  }
   if(!okDB(cab, 'No se pudo crear el pedido')) return;
 
   const items = state.carrito.map(l => ({
@@ -1467,6 +1606,7 @@ async function confirmarPedido(){
   await cargarCliente();
   refrescarCliente();
   toast('Pedido confirmado y enviado al negocio');
+  irAVista('v-pedidos');
 }
 
 function badgeEstadoPedido(estado){
@@ -1925,4 +2065,4 @@ function renderPedidosNegocioTable(){
       ${opciones.map(o=>`<option value="${o}" ${o===c.estado?'selected':''}>${etiquetas[o]}</option>`).join('')}
     </select></td><td>${c.fecha}</td></tr>
   `).join('');
-} 
+}
