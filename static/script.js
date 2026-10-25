@@ -169,7 +169,6 @@ async function exitApp() {
 }
 
 // ---------- Contacto: el mensaje se envía a una función AWS Lambda ----------
-// Pega aquí la "URL de función" de tu Lambda (termina en .lambda-url.REGIÓN.on.aws/).
 const CONTACTO_URL = 'https://ooc3kvsndc2ccx3agvgjk44dca0dfvbi.lambda-url.us-east-2.on.aws/';
 let enviandoMensaje = false;
 
@@ -177,7 +176,12 @@ async function enviarMensaje() {
   if (enviandoMensaje) return;
   const asunto = document.getElementById('msg-asunto');
   const cuerpo = document.getElementById('msg-cuerpo');
-  const a = asunto.value.trim(), m = cuerpo.value.trim();
+  const inputNombre = document.getElementById('msg-nombre');
+  const inputTel = document.getElementById('msg-telefono');
+
+  const a = asunto ? asunto.value.trim() : '';
+  const m = cuerpo ? cuerpo.value.trim() : '';
+
   if (a.length < 3 || m.length < 10) { toast('Escribe un asunto (mínimo 3 letras) y un mensaje (mínimo 10 letras)'); return; }
   if (a.length > 100 || m.length > 1000) { toast('El asunto admite hasta 100 caracteres y el mensaje hasta 1000'); return; }
   if (!CONTACTO_URL) { toast('El formulario de contacto todavía no está conectado'); return; }
@@ -188,15 +192,26 @@ async function enviarMensaje() {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { toast('Inicia sesión de nuevo para enviar tu mensaje'); return; }
+
+    // MEJORA: Lee de los inputs del formulario si existen, con respaldo en el perfil cargado
     const p = state.perfil || {};
+    const nombre = (inputNombre && inputNombre.value.trim()) || p.nombre || '';
+    const telefono = (inputTel && inputTel.value.trim()) || p.telefono || '';
+
     const res = await fetch(CONTACTO_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
-      body: JSON.stringify({ nombre: p.nombre || '', telefono: p.telefono || '', asunto: a, mensaje: m })
+      body: JSON.stringify({ nombre, telefono, asunto: a, mensaje: m })
     });
     let data = {};
     try { data = await res.json(); } catch (e) {}
-    if (res.ok) { asunto.value = ''; cuerpo.value = ''; toast('Mensaje enviado. Te responderemos pronto.'); }
+    if (res.ok) {
+      if (asunto) asunto.value = '';
+      if (cuerpo) cuerpo.value = '';
+      if (inputNombre) inputNombre.value = '';
+      if (inputTel) inputTel.value = '';
+      toast('Mensaje enviado. Te responderemos pronto.');
+    }
     else if (res.status === 429) toast('Enviaste varios mensajes seguidos. Intenta de nuevo en un rato.');
     else if (res.status === 401) toast('Tu sesión venció. Inicia sesión de nuevo.');
     else toast(data.error || 'No se pudo enviar el mensaje. Intenta de nuevo.');
@@ -222,7 +237,7 @@ async function iniciarSesion() {
   } catch (err) { console.error("Excepción al iniciar sesión:", err); }
 }
 
-// ===================== INICIAR SESIÓN CON GOOGLE =====================
+/* ===================== INICIAR SESIÓN CON GOOGLE ===================== */
 async function iniciarSesionGoogle() {
   if (!supabase) await initSupabase();
   if (!supabase) return;
@@ -303,7 +318,6 @@ async function registrarse() {
 })();
 
 /* ===================== CARGA DE DATOS DESDE LA BASE ===================== */
-// Lo que ven todos: precios, materiales, colores y catálogo
 async function cargarBase(){
   const [cfg, mats, cols, prods] = await Promise.all([
     supabase.from('configuracion').select('*').eq('id', 1).maybeSingle(),
@@ -325,7 +339,6 @@ async function cargarCliente(){
   const { data: { user } } = await supabase.auth.getUser();
   if(!user) return;
 
-  // ¿Tiene Google vinculado? ¿Tiene contraseña? (Supabase junta ambas en una sola cuenta si el correo es el mismo)
   const ap = user.app_metadata || {};
   const provs = (ap.providers || (ap.provider ? [ap.provider] : [])).slice();
   const ids = user.identities || [];
@@ -338,22 +351,18 @@ async function cargarCliente(){
   const gd = (gi && gi.identity_data) || {};
   state.fotoGoogle = state.tieneGoogle ? (um.avatar_url || um.picture || gd.avatar_url || gd.picture || '') : '';
 
-  // La fila de 'usuarios' la crea el trigger al registrarse (correo o Google)
   let per = await supabase.from('usuarios').select('*').eq('auth_id', user.id).maybeSingle();
   if(per.error){ console.error(per.error); toast('No se pudo leer tu perfil: ' + per.error.message); return; }
 
-  // Si la cuenta no tiene perfil todavía (cuenta antigua o Google), se crea solo
   if(!per.data){
     const meta0 = user.user_metadata || {};
     const nombreInicial = meta0.full_name || meta0.name || (user.email || '').split('@')[0];
 
-    // 1) la base lo crea con una función
     const r = await supabase.rpc('asegurar_perfil');
     if(!r.error && r.data){
       per = { data: r.data };
     } else {
       console.warn('asegurar_perfil falló, se intenta crear directo:', r.error);
-      // 2) el cliente crea su propio perfil (la política de la base lo permite)
       const ins = await supabase.from('usuarios')
         .insert({ nombre: nombreInicial, correo: user.email, auth_id: user.id })
         .select().maybeSingle();
@@ -435,8 +444,7 @@ function initCliente(){
     dz.addEventListener('drop', e=>{ e.preventDefault(); dz.classList.remove('drag'); if(e.dataTransfer.files[0]) handleSTL(e.dataTransfer.files[0]); });
     input.addEventListener('change', e=>{ if(e.target.files[0]) handleSTL(e.target.files[0]); });
   }
-  // Al cambiar relleno, material, color o cantidad, se recalcula el peso y, si ya hay un precio
-  // en pantalla, también se actualiza solo (sin volver a pulsar "Calcular precio").
+
   ['q-infill', 'q-material', 'q-color', 'q-cantidad'].forEach(id => {
     const el = document.getElementById(id);
     if(!el) return;
@@ -445,17 +453,16 @@ function initCliente(){
       if(state.lastQuote) calcularCotizacion();
     };
     el.addEventListener('change', alCambiar);
-    if(id === 'q-cantidad') el.addEventListener('input', alCambiar);
+    if(id === 'q-cantidad' || id === 'q-infill') el.addEventListener('input', alCambiar);
   });
 }
 
-// ---------- REGLAS Y RESTRICCIONES (edítalas aquí) ----------
-const MAX_ARCHIVO_MB = 50;      // tamaño máximo del STL
-const MIN_MEDIDA_MM  = 2;       // el lado más largo del modelo no puede ser menor
-const MAX_MEDIDA_MM  = 400;     // ni mayor (ajústalo al tamaño de tu cama de impresión)
-const MAX_CANTIDAD   = 100;     // piezas por cotización
+// ---------- REGLAS Y RESTRICCIONES ----------
+const MAX_ARCHIVO_MB = 50;      
+const MIN_MEDIDA_MM  = 2;       
+const MAX_MEDIDA_MM  = 400;     
+const MAX_CANTIDAD   = 100;     
 
-// Ciudades donde atiendes. Borra las que NO cubras o agrega las que falten.
 const CIUDADES_ENVIO = [
   { grupo: 'Departamento de Guatemala', ciudades: [
     'Guatemala', 'Mixco', 'Villa Nueva', 'Villa Canales', 'San Miguel Petapa', 'Santa Catarina Pinula',
@@ -468,7 +475,6 @@ const CIUDADES_ENVIO = [
 ];
 const CIUDADES_PLANAS = CIUDADES_ENVIO.reduce((a, g) => a.concat(g.ciudades), []);
 
-// Teléfonos de Guatemala: +502 y 8 dígitos. Fijos empiezan con 2, 6 o 7; celulares con 3, 4 o 5.
 function digitosTelGT(v){
   const s = String(v || '').trim();
   let d;
@@ -503,12 +509,10 @@ function errDireccion(v){
   if(s.length > 150) return 'La dirección es muy larga (máximo 150 caracteres)';
   return '';
 }
-// ---------- Nombre de perfil: formato y palabras no permitidas ----------
-const MAX_FOTO_MB = 5;          // peso máximo de la foto que elige el cliente
-const FOTO_PX = 256;            // la foto se recorta a un cuadrado de 256 x 256 antes de subirla
 
-// Lista base (español, jerga guatemalteca, inglés). Agrega o quita palabras aquí.
-// Se compara palabra por palabra, así que apellidos como "Pulido" no se confunden.
+const MAX_FOTO_MB = 5;          
+const FOTO_PX = 256;            
+
 const PALABRAS_PROHIBIDAS = [
   'puta','puto','putas','putos','putada','hijueputa','hdp','ptm','pendejo','pendeja','pendejada',
   'cabron','cabrona','chinga','chingar','chingada','chingado','chingue','mierda','carajo','verga','pinga',
@@ -522,11 +526,11 @@ const PALABRAS_PROHIBIDAS = [
 function _normNombre(s){
   return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]+/g, ' ').trim();
 }
-function _colapsar(t){ return t.replace(/(.)\1+/g, '$1'); }          // "puuuuta" -> "puta"
+function _colapsar(t){ return t.replace(/(.)\1+/g, '$1'); }          
 const _PROHIBIDAS = new Set(PALABRAS_PROHIBIDAS.map(w => _colapsar(_normNombre(w))));
 function nombreInapropiado(nombre){
   const tokens = _normNombre(nombre).split(' ').filter(Boolean).map(_colapsar);
-  const pegadas = []; let run = '';                                   // "p u t a" -> "puta"
+  const pegadas = []; let run = '';                                   
   tokens.forEach(t => { if(t.length === 1) run += t; else { if(run.length >= 3) pegadas.push(run); run = ''; } });
   if(run.length >= 3) pegadas.push(run);
   return tokens.concat(pegadas).some(t => _PROHIBIDAS.has(t) || _PROHIBIDAS.has(t.replace(/e?s$/, '')));
@@ -541,19 +545,16 @@ function errNombre(v){
   return '';
 }
 
-
 // ---------- PERFIL DEL CLIENTE ----------
-let perfilSucio = false;        // true cuando hay cambios sin guardar en el formulario
-let validarAlMostrar = null;    // al mandar al cliente a su perfil, marca lo que le falta
-let busquedaCatalogo = '';      // texto del buscador de la barra superior
+let perfilSucio = false;        
+let validarAlMostrar = null;    
+let busquedaCatalogo = '';      
 
-// Datos extra (dirección de envío y notificaciones).
-// Si la tabla 'usuarios' ya tiene las columnas, viven en Supabase; si no, se guardan en este navegador.
 function leerExtraPerfil(){
   const p = state.perfil || {};
   let local = {};
   try{ local = JSON.parse(localStorage.getItem('perfil_extra_' + p.id_user) || '{}') || {}; }catch(e){}
-  const v = k => (k in p) ? p[k] : local[k];            // si la columna existe en Supabase se usa; si no, lo guardado en este navegador
+  const v = k => (k in p) ? p[k] : local[k];            
   return {
     direccion:     v('direccion') || '',
     ciudad_envio:  v('ciudad_envio') || '',
@@ -586,7 +587,6 @@ function rellenarPerfil(){
   const ciudad = p.ciudad || '';
   const x = leerExtraPerfil();
 
-  // --- Tarjeta de identidad (siempre se actualiza) ---
   const visible = nombre || correo.split('@')[0] || 'Cliente';
   const inicial = (nombre || correo || '?').trim().charAt(0).toUpperCase();
   const propia = leerAvatarPropio();
@@ -595,7 +595,6 @@ function rellenarPerfil(){
   pintarAvatar($('pf-avatar-top'), inicial, foto);
   const qf = $('pf-quitar-foto'); if(qf) qf.hidden = !propia;
 
-  // Cuenta de Google: no hay contraseña que cambiar aquí
   const gSolo = !!state.esSoloGoogle, gAlgo = !!state.tieneGoogle;
   const via = $('pf-via'); if(via) via.hidden = !gAlgo;
   setText('pf-via-txt', gSolo ? 'Conectado con Google' : 'Google vinculado');
@@ -611,7 +610,6 @@ function rellenarPerfil(){
   setText('pf-stat-archivos', state.archivos.length);
   setText('pf-stat-pedidos', state.pedidos.filter(o => o.estado === 'entregado').length);
 
-  // --- Qué tan completo está el perfil ---
   const piezas = [['nombre', nombre], ['teléfono', tel], ['ciudad', ciudad], ['dirección de envío', x.direccion]];
   const faltan = piezas.filter(([, v]) => !String(v || '').trim()).map(([k]) => k);
   const pct = Math.round(((piezas.length - faltan.length) / piezas.length) * 100);
@@ -619,13 +617,12 @@ function rellenarPerfil(){
   const bar = $('pf-pct-bar'); if(bar) bar.style.width = pct + '%';
   setText('pf-pct-hint', faltan.length ? 'Te falta: ' + faltan.join(', ') + '.' : 'Todo listo para tus envíos.');
 
-  // --- Campos del formulario (no se pisan si hay cambios sin guardar) ---
   if(!perfilSucio){
     const setVal = (id, val) => { const el = $(id); if(el && document.activeElement !== el) el.value = val || ''; };
     setVal('pf-nombre', nombre);
     setVal('pf-correo', correo);
     setVal('pf-tel', formatearTelGT(tel));
-    setVal('pf-ciudad', ciudad);            // si la ciudad guardada no está en la lista, queda en blanco para que elija
+    setVal('pf-ciudad', ciudad);            
     setVal('pf-dir', x.direccion);
     setVal('pf-ciudad-envio', x.ciudad_envio);
     setVal('pf-cp', x.codigo_postal);
@@ -636,7 +633,6 @@ function rellenarPerfil(){
   if(validarAlMostrar){ const o = validarAlMostrar; validarAlMostrar = null; validarFormularioPerfil(o); }
 }
 
-// ---------- Validación del formulario de perfil ----------
 function setError(id, msg){
   const el = document.getElementById(id);
   const field = el && el.closest('.field');
@@ -654,8 +650,6 @@ function setError(id, msg){
   }
 }
 
-// opts.envio === undefined  → solo valida lo que el cliente haya escrito (al guardar el perfil)
-// opts.envio === false/true → además exige teléfono y ciudad (y la dirección si es true)
 function validarFormularioPerfil(opts){
   opts = opts || {};
   const exigir = opts.envio !== undefined;
@@ -701,7 +695,6 @@ function alSalirCampo(e){
   else if(t.id === 'pf-dir') setError('pf-dir', errDireccion(t.value));
 }
 
-// Antes de guardar un archivo o confirmar un pedido: el perfil debe estar completo y ser válido
 function exigirPerfil(conEnvio){
   const p = state.perfil || {}, x = leerExtraPerfil(), falta = [];
   if(errTelGT(p.telefono)) falta.push('teléfono');
@@ -730,7 +723,6 @@ function descartarPerfil(){
   rellenarPerfil();
 }
 
-// Guarda los cambios del usuario en Supabase
 async function guardarPerfil(event) {
   if (event) event.preventDefault();
   const btn = document.getElementById('btnGuardarPerfil');
@@ -757,7 +749,6 @@ async function guardarPerfil(event) {
       codigo_acceso: val('pf-codigo').replace(/\s+/g, ' '),
       notif_correo:  !!document.getElementById('pf-notif').checked
     };
-    // Cada dato se guarda en Supabase si su columna existe; si no, se queda en este navegador
     const enLocal = {};
     Object.keys(extra).forEach(k => {
       if(k in state.perfil) datos[k] = (typeof extra[k] === 'string') ? (extra[k] || null) : extra[k];
@@ -792,7 +783,6 @@ async function guardarPerfil(event) {
   }
 }
 
-// Envía un correo para cambiar la contraseña
 async function cambiarPassword(){
   if(state.esSoloGoogle){ toast('Tu cuenta usa Google: administra tu contraseña desde tu cuenta de Google'); return; }
   const correo = state.perfil && state.perfil.correo;
@@ -801,7 +791,6 @@ async function cambiarPassword(){
   toast(error ? 'No se pudo enviar el correo: ' + error.message : 'Te enviamos un correo para cambiar tu contraseña');
 }
 
-// ---------- Ventana de perfil ----------
 let perfilAbierto = false, perfilFocoPrevio = null;
 
 function abrirPerfil(){
@@ -810,11 +799,10 @@ function abrirPerfil(){
   perfilFocoPrevio = document.activeElement;
   m.hidden = false; perfilAbierto = true;
   document.body.style.overflow = 'hidden';
-  rellenarPerfil();                                    // datos frescos (y marca lo que falte si venimos de un aviso)
+  rellenarPerfil();                                    
   if(!m.querySelector('.invalid')){ const x = m.querySelector('.icon-btn'); if(x) x.focus(); }
 }
 
-// Devuelve true si se cerró (o ya estaba cerrada) y false si el cliente decidió seguir editando
 function cerrarPerfil(){
   const m = document.getElementById('perfil-modal');
   if(!m || m.hidden) return true;
@@ -832,7 +820,7 @@ function cerrarPerfil(){
 document.addEventListener('keydown', e => {
   if(!perfilAbierto) return;
   if(e.key === 'Escape'){ e.preventDefault(); cerrarPerfil(); return; }
-  if(e.key === 'Tab'){                                 // el foco no se escapa de la ventana
+  if(e.key === 'Tab'){                                 
     const m = document.getElementById('perfil-modal');
     const f = Array.prototype.filter.call(m.querySelectorAll('a[href], button:not([disabled]), input, select, textarea'), el => el.offsetParent !== null);
     if(!f.length) return;
@@ -842,7 +830,6 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// ---------- Foto de perfil (Supabase Storage, bucket 'avatars') ----------
 function leerAvatarPropio(){
   const p = state.perfil || {};
   if('avatar_url' in p) return p.avatar_url || '';
@@ -860,7 +847,6 @@ async function guardarAvatarUrl(url){
   }
 }
 
-// Recorta al centro en cuadrado y reduce a FOTO_PX: la foto pesa unos 20-40 KB
 function procesarFoto(file){
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -901,7 +887,7 @@ async function alElegirFoto(e){
     const { error } = await supabase.storage.from('avatars').upload(ruta, blob, { upsert: true, contentType: 'image/jpeg', cacheControl: '3600' });
     if(error) throw error;
     const base = supabase.storage.from('avatars').getPublicUrl(ruta).data.publicUrl;
-    await guardarAvatarUrl(base + '?v=' + Date.now());     // ?v= evita ver la foto vieja guardada en caché
+    await guardarAvatarUrl(base + '?v=' + Date.now());     
     rellenarPerfil();
     toast('¡Foto actualizada!');
   }catch(err){
@@ -925,7 +911,6 @@ async function quitarFoto(){
   }
 }
 
-// Muestra la foto (la de Google, si hay) y, si no carga, la inicial
 function pintarAvatar(el, inicial, foto){
   if(!el) return;
   const ok = !!foto && /^https:\/\//.test(foto);
@@ -938,7 +923,6 @@ function pintarAvatar(el, inicial, foto){
   img.src = foto;
 }
 
-// Al entrar, el cliente ve primero el catálogo
 function mostrarVistaInicial(){
   const app = document.getElementById('app-cliente');
   if(!app) return;
@@ -948,8 +932,6 @@ function mostrarVistaInicial(){
   if(m){ m.hidden = true; perfilAbierto = false; document.body.style.overflow = ''; }
 }
 
-// ---------- Menú lateral ----------
-// Computadora: se contrae a una barra de iconos y recuerda la elección. Celular: panel que sale desde la izquierda.
 const MQ_MOVIL = window.matchMedia('(max-width: 900px)');
 let menuFocoPrevio = null;
 
@@ -993,7 +975,7 @@ function iniciarMenus(){
     let col = false;
     try{ col = localStorage.getItem('menu_colapsado_' + app.id) === '1'; }catch(e){}
     app.classList.toggle('menu-colapsado', col);
-    app.querySelectorAll('.side-btn').forEach(b => { const l = b.querySelector('.lbl'); if(l) b.title = l.textContent.trim(); });   // texto al pasar el mouse cuando está contraído
+    app.querySelectorAll('.side-btn').forEach(b => { const l = b.querySelector('.lbl'); if(l) b.title = l.textContent.trim(); });   
     actualizarBotonMenu(app);
   });
 }
@@ -1004,13 +986,11 @@ function iniciarMenus(){
 document.addEventListener('keydown', e => { if(e.key === 'Escape') cerrarMenu(); });
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciarMenus); else iniciarMenus();
 
-// Abre una sección del cliente desde un botón que no está en el menú
 function irAVista(viewId){
   const btn = document.querySelector('#app-cliente .side-btn[data-view="' + viewId + '"]');
   showView('cliente', viewId, btn);
 }
 
-// Buscador de la barra superior: filtra el catálogo
 function buscarGlobal(e){
   e.preventDefault();
   busquedaCatalogo = document.getElementById('buscador').value.trim().toLowerCase();
@@ -1050,11 +1030,10 @@ function signedVolumeOfTriangle(p1,p2,p3){
   return (p1[0]*(p2[1]*p3[2]-p3[1]*p2[2]) - p1[1]*(p2[0]*p3[2]-p3[0]*p2[2]) + p1[2]*(p2[0]*p3[1]-p3[0]*p2[1]))/6.0;
 }
 
-// Lee el STL (binario o texto) y mide: volumen, superficie y dimensiones
 function parseSTL(buffer){
   const view = new DataView(buffer);
   let volume = 0, area = 0, tris = 0;
-  let aLado = 0, aArriba = 0, aAbajo = 0;   // superficie lateral, tapas superiores y base
+  let aLado = 0, aArriba = 0, aAbajo = 0;   
   const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
 
   const acumular = (a, b, c) => {
@@ -1063,10 +1042,10 @@ function parseSTL(buffer){
     const vx=c[0]-a[0], vy=c[1]-a[1], vz=c[2]-a[2];
     const cx=uy*vz-uz*vy, cy=uz*vx-ux*vz, cz=ux*vy-uy*vx;
     const dobleArea = Math.sqrt(cx*cx + cy*cy + cz*cz);
-    const a2 = dobleArea / 2;                           // área del triángulo
+    const a2 = dobleArea / 2;                           
     area += a2;
     if(dobleArea > 0){
-      const nz = cz / dobleArea;                        // inclinación de la cara (1 = mira hacia arriba)
+      const nz = cz / dobleArea;                        
       aArriba += a2 * Math.max(nz, 0);
       aAbajo  += a2 * Math.max(-nz, 0);
       aLado   += a2 * (1 - Math.abs(nz));
@@ -1081,10 +1060,10 @@ function parseSTL(buffer){
   let leido = false;
   if(buffer.byteLength > 84){
     const triCount = view.getUint32(80, true);
-    if(84 + triCount*50 === buffer.byteLength){        // STL binario
+    if(84 + triCount*50 === buffer.byteLength){        
       let offset = 84;
       for(let i=0; i<triCount; i++){
-        offset += 12;                                   // saltar la normal
+        offset += 12;                                   
         const v = [];
         for(let k=0; k<3; k++){
           v.push([view.getFloat32(offset,true), view.getFloat32(offset+4,true), view.getFloat32(offset+8,true)]);
@@ -1096,7 +1075,7 @@ function parseSTL(buffer){
       leido = true;
     }
   }
-  if(!leido){                                           // STL en texto (ASCII)
+  if(!leido){                                           
     const text = new TextDecoder().decode(buffer);
     const rx = /vertex\s+([\-\d.eE+]+)\s+([\-\d.eE+]+)\s+([\-\d.eE+]+)/g;
     let m, verts = [];
@@ -1106,35 +1085,30 @@ function parseSTL(buffer){
     }
   }
   const dims = tris ? [max[0]-min[0], max[1]-min[1], max[2]-min[2]] : [0,0,0];
-  if(volume < 0){ const t = aArriba; aArriba = aAbajo; aAbajo = t; }   // STL con caras al revés
+  if(volume < 0){ const t = aArriba; aArriba = aAbajo; aAbajo = t; }   
   return { volumeMm3: Math.abs(volume), areaMm2: area, aLado, aArriba, aAbajo, tris, dims };
 }
 
-// ---------- Cotizador: el precio se calcula aquí con las tarifas que definió el negocio ----------
-let archivoSeleccionado = null;   // el File elegido
-let volumenMm3 = 0;               // volumen del modelo
-let areaMm2 = 0;                  // superficie del modelo
+let archivoSeleccionado = null;   
+let volumenMm3 = 0;               
+let areaMm2 = 0;                  
 let areaLadoMm2 = 0, areaArribaMm2 = 0, areaAbajoMm2 = 0;
-let alturaMm = 0;                 // altura (eje Z) del modelo
-let pesoBaseG = 0, tiempoBaseH = 0;  // peso y tiempo estimados de UNA pieza
-let guardandoArchivo = false;     // evita guardar dos veces con doble clic
+let alturaMm = 0;                 
+let pesoBaseG = 0, tiempoBaseH = 0;  
+let guardandoArchivo = false;     
 
-// Perfil estándar de Bambu Lab A1 (boquilla 0.4 mm, "0.20mm Standard @BBL A1").
-// Si tus tiempos reales difieren, ajusta SOLO estos números.
 const IMPRESION = {
-  anchoLinea: 0.42,   // mm
-  paredes: 2,         // perímetros
-  capasSup: 5,        // capas sólidas arriba
-  capasInf: 3,        // capas sólidas abajo
-  altCapa: 0.2,       // mm por capa
-  flujoMm3s: 8,       // mm³/s promedio REAL (incluye aceleraciones y desplazamientos)
-  segPorCapa: 3       // segundos extra por cada cambio de capa
+  anchoLinea: 0.42,   
+  paredes: 2,         
+  capasSup: 5,        
+  capasInf: 3,        
+  altCapa: 0.2,       
+  flujoMm3s: 8,       
+  segPorCapa: 3       
 };
-// Solo en el RELLENO: sus líneas se separan según el porcentaje y cada una tiene los bordes
-// redondeados, así que llevan ~10% menos plástico que ancho × alto. Las paredes y las capas
-// sólidas se pegan entre sí y llenan el 100% del espacio, por eso a ellas NO se les aplica.
+
 IMPRESION.factorExtrusion = 1 - (IMPRESION.altCapa / IMPRESION.anchoLinea) * (1 - Math.PI / 4);
-const DENSIDADES = { PLA: 1.24, PETG: 1.27, ABS: 1.04, TPU: 1.21 };   // g/cm³
+const DENSIDADES = { PLA: 1.24, PETG: 1.27, ABS: 1.04, TPU: 1.21 };   
 
 function densidadDe(nombre){
   const n = String(nombre || '').toUpperCase();
@@ -1207,24 +1181,27 @@ function handleSTL(file) {
   reader.readAsArrayBuffer(file);
 }
 
-// Estima peso y tiempo de UNA pieza según el relleno y el material elegidos
+// MEJORA: Estima peso y tiempo de UNA pieza leyendo dinámicamente el relleno del DOM (#q-infill)
 function actualizarPesoTiempo(){
   if(!(volumenMm3 > 0)) return;
-  const infill = 0.15
+
+  const infillEl = document.getElementById('q-infill');
+  const infillVal = infillEl ? parseFloat(infillEl.value) : 15;
+  const infill = (infillVal > 1 ? infillVal / 100 : infillVal) || 0.15;
+
   const matSel = document.getElementById('q-material');
   const densidad = densidadDe(matSel ? matSel.value : '');
 
-  // Cáscara sólida: paredes laterales + capas superiores + capas de la base
   const espLado = IMPRESION.paredes * IMPRESION.anchoLinea;
   const espArriba = IMPRESION.capasSup * IMPRESION.altCapa;
   const espAbajo = IMPRESION.capasInf * IMPRESION.altCapa;
   const cascaraTeorica = areaLadoMm2 * espLado + areaArribaMm2 * espArriba + areaAbajoMm2 * espAbajo;
-  const delgada = cascaraTeorica >= volumenMm3;     // paredes tan finas que no queda interior: todo es sólido
+  const delgada = cascaraTeorica >= volumenMm3;     
   const cascara = Math.min(volumenMm3, cascaraTeorica);
-  const interior = Math.max(0, volumenMm3 - cascara);                // lo que lleva relleno
-  // Al 100% el relleno es sólido (sin huecos entre líneas), así que ahí no hay descuento
+  const interior = Math.max(0, volumenMm3 - cascara);                
+  
   const factorRelleno = infill >= 0.99 ? 1 : IMPRESION.factorExtrusion;
-  const vImpreso = cascara + interior * infill * factorRelleno;                      // mm³ de plástico real
+  const vImpreso = cascara + interior * infill * factorRelleno;                      
 
   pesoBaseG = (vImpreso / 1000) * densidad;
   const capas = alturaMm / IMPRESION.altCapa;
@@ -1261,11 +1238,10 @@ function calcularCotizacion() {
   if(!material){ toast('Elige un material'); return; }
   if(!color){ toast('Elige un color'); return; }
 
-  actualizarPesoTiempo();                    // recalcula con el material y relleno actuales
+  actualizarPesoTiempo();                    
   const peso = pesoBaseG, tiempo = tiempoBaseH;
   if(!(peso > 0) || !(tiempo > 0)){ toast('No se pudo estimar el peso del archivo. Prueba con otro .STL.'); return; }
 
-  // Precio por pieza redondeado a centavos; el total es exactamente la suma de lo que se muestra
   const matUnidad = redondear2(peso * state.precios.porGramo * material.mult);
   const tiempoUnidad = redondear2(tiempo * state.precios.porHora);
   const matTotal = redondear2(matUnidad * cant);
@@ -1294,7 +1270,6 @@ function calcularCotizacion() {
   c.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-// Sube el STL a S3 a través de Flask. Devuelve { clave, hash } o null si falla.
 async function subirArchivoA_S3(file) {
   const { data: { session } } = await supabase.auth.getSession();
   if(!session){ toast('Tu sesión expiró. Inicia sesión otra vez.'); return null; }
@@ -1322,10 +1297,10 @@ async function subirArchivoA_S3(file) {
 }
 
 async function guardarArchivo(){
-  if(guardandoArchivo) return;                       // ya hay un guardado en curso
+  if(guardandoArchivo) return;                       
   if(!state.lastQuote){ toast('Calcula un precio primero'); return; }
   if(!state.perfil){ toast('No se encontró tu perfil de cliente'); return; }
-  if(!exigirPerfil(false)) return;          // necesitamos tu teléfono y ciudad para contactarte
+  if(!exigirPerfil(false)) return;          
 
   guardandoArchivo = true;
   const btn = document.querySelector('[onclick="guardarArchivo()"]');
@@ -1334,12 +1309,10 @@ async function guardarArchivo(){
   try {
     const q = state.lastQuote;
 
-    // 1) Subir a S3 (el servidor calcula la huella SHA-256 del contenido)
     toast('Subiendo archivo...');
     const sub = await subirArchivoA_S3(q.archivo);
     if(!sub) return;
 
-    // 2) ¿Este cliente ya guardó exactamente este archivo?
     const dup = await supabase.from('archivos').select('id_archivo, nombre_archivo')
       .eq('id_usuario', state.perfil.id_user).eq('hash_archivo', sub.hash).maybeSingle();
     if(dup.data){
@@ -1347,7 +1320,6 @@ async function guardarArchivo(){
       return;
     }
 
-    // 3) Guardar la cotización con la ruta del archivo en S3
     const res = await supabase.from('archivos').insert({
       nombre_archivo: q.nombre, material: q.material, color: q.color,
       peso: q.peso, tiempo: q.tiempo, precio: q.total,
@@ -1360,7 +1332,6 @@ async function guardarArchivo(){
       return;
     }
 
-    // 4) Limpiar para que no se pueda volver a guardar la misma cotización
     state.lastQuote = null;
     archivoSeleccionado = null;
     volumenMm3 = 0; areaMm2 = 0; alturaMm = 0; pesoBaseG = 0; tiempoBaseH = 0;
@@ -1396,7 +1367,6 @@ function renderArchivos(){
   tb.innerHTML = state.archivos.map(a => {
     let accion = `<span class="small-note">—</span>`;
     
-    // Configuramos el botón según el estado
     if(a.estado==='aprobada'){
       accion = archivoYaPedido(a.id)
         ? `<span class="small-note">Ya pedida</span>`
@@ -1405,7 +1375,6 @@ function renderArchivos(){
       accion = `<button class="btn btn-sm" style="color:var(--danger); border-color:var(--danger);" onclick="eliminarArchivoCliente(${a.id})">Borrar</button>`;
     }
 
-    // Mostramos el nombre, y si está rechazado, también el motivo
     let celdaNombre = `<td class="strong">${esc(a.nombre)}</td>`;
     if(a.estado === 'rechazada' && a.motivo) {
       celdaNombre = `<td><span class="strong">${esc(a.nombre)}</span><br><span class="small-note" style="color:var(--danger);">Motivo: ${esc(a.motivo)}</span></td>`;
@@ -1423,8 +1392,8 @@ async function eliminarArchivoCliente(id) {
   if(!okDB(res, 'No se pudo eliminar el archivo')) return;
   
   toast('Archivo eliminado correctamente');
-  await cargarCliente(); // Recargamos datos de Supabase
-  refrescarCliente();    // Refrescamos la vista
+  await cargarCliente(); 
+  refrescarCliente();    
 }
 
 function agregarArchivoAlCarrito(id){
@@ -1467,17 +1436,14 @@ function agregarProductoAlCarrito(id){
   toast('Agregado al carrito');
 }
 
-// ---------- El carrito se guarda en este navegador, por cliente ----------
 function guardarCarrito(){
   const id = state.perfil && state.perfil.id_user;
-  if(!id || state.carritoDe !== id) return;            // todavía no se ha restaurado: no pisar lo guardado
+  if(!id || state.carritoDe !== id) return;            
   try{
     localStorage.setItem('carrito_' + id, JSON.stringify(state.carrito.map(l => ({ tipo: l.tipo, ref: l.ref, cantidad: l.cantidad }))));
   }catch(e){}
 }
 
-// Solo se guardan tipo, id y cantidad. Nombre y precio se vuelven a leer de la base,
-// así que nunca queda un precio viejo (ni uno alterado) en el carrito.
 function restaurarCarrito(){
   const id = state.perfil && state.perfil.id_user;
   if(!id || state.carritoDe === id) return;
@@ -1502,7 +1468,6 @@ function restaurarCarrito(){
   if(descartados) toast('Actualizamos tu carrito: algunos artículos ya no están disponibles');
 }
 
-// Resumen de entrega dentro del carrito
 function renderEntregaCarrito(){
   const box = document.getElementById('cartEntrega');
   const datos = document.getElementById('cartEntregaDatos');
@@ -1550,7 +1515,7 @@ function quitarDelCarrito(i){ state.carrito.splice(i,1); renderCarrito(); }
 
 let confirmandoPedido = false;
 async function confirmarPedido(){
-  if(confirmandoPedido) return;                          // evita pedidos duplicados por doble clic
+  if(confirmandoPedido) return;                          
   confirmandoPedido = true;
   const btn = document.getElementById('btnConfirmar');
   if(btn){ btn.disabled = true; btn.textContent = 'Enviando...'; }
@@ -1565,7 +1530,7 @@ async function confirmarPedido(){
 async function _confirmarPedido(){
   if(!state.carrito.length){ toast('Tu carrito está vacío'); return; }
   if(!state.perfil){ toast('No se encontró tu perfil de cliente'); return; }
-  if(!exigirPerfil(true)) return;           // para confirmar un pedido hace falta la dirección de entrega
+  if(!exigirPerfil(true)) return;           
 
   await cargarBase();
   for(const l of state.carrito){
@@ -1577,13 +1542,12 @@ async function _confirmarPedido(){
 
   const idUser = state.perfil.id_user || state.perfil.id;
   const total = state.carrito.reduce((a,l)=>a+l.precio*l.cantidad,0);
-  // Datos de entrega: se copian al pedido tal como están hoy (si el cliente cambia su perfil después, el pedido no cambia)
   const x = leerExtraPerfil();
   const basico = { direccion_envio: x.direccion, ciudad_envio: x.ciudad_envio, telefono_contacto: state.perfil.telefono };
   const conCP = Object.assign({}, basico, { codigo_postal: x.codigo_postal || null });
   const completo = Object.assign({}, conCP, { residencial: x.residencial || null, codigo_acceso: x.codigo_acceso || null });
   const base = { total, estado:'pendiente', id_usuario: idUser };
-  // Se intenta con todos los datos de entrega; si a 'carritos' le faltan columnas, se reintenta con menos para no perder la venta
+
   const intentos = [Object.assign({}, base, completo), Object.assign({}, base, conCP), Object.assign({}, base, basico), base];
   let cab;
   for(let i = 0; i < intentos.length; i++){
@@ -1625,7 +1589,6 @@ function renderPedidosCliente(){
 const val = id => (document.getElementById(id)?.value ?? '').trim();
 const limpiar = (...ids) => ids.forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
 
-// ---------- Productos ----------
 async function formAgregarProducto(){
   const nombre = val('np-nombre'), desc = val('np-desc');
   const precio = parseFloat(val('np-precio')), exist = parseInt(val('np-exist'));
@@ -1678,7 +1641,6 @@ function renderProductosNegocio(){
   `).join('');
 }
 
-// ---------- Precios, materiales y colores ----------
 async function formGuardarPrecios(){
   const g = parseFloat(val('np-gramo')), h = parseFloat(val('np-hora'));
   if(!(g > 0) || !(h > 0)){ toast('Ingresa precios válidos (mayores a 0)'); return; }
@@ -1737,7 +1699,6 @@ function rellenarPreciosNegocio(){
   if(h && document.activeElement !== h) h.value = state.precios.porHora || '';
 }
 
-// ---------- Filamentos ----------
 async function formAgregarFilamento(){
   const tipo = val('nf-tipo'), rest = parseInt(val('nf-restante')), costo = parseFloat(val('nf-costo'));
   if(!tipo || isNaN(rest) || rest < 0 || rest > 100){ toast('Escribe el tipo/color y un % entre 0 y 100'); return; }
@@ -1774,7 +1735,6 @@ function renderFilamentosNegocio(){
   `).join('');
 }
 
-// ---------- Cámaras ----------
 async function formAgregarCamara(){
   const nombre = val('ncam-nombre');
   if(!nombre){ toast('Escribe el nombre de la cámara'); return; }
@@ -1809,16 +1769,15 @@ async function quitarCamara(id){
   await cargarNegocio(); renderCamaras(); renderKPIs();
 }
 
-// ---------- Revisar archivos de clientes ----------
 async function revisarArchivo(id, estado){
   let datosActualizar = { estado: estado };
   
   if (estado === 'rechazada') {
     const motivo = prompt('Escribe el motivo del rechazo para el cliente:');
-    if (motivo === null) return; // Si el admin cancela, no hacemos nada
+    if (motivo === null) return; 
     datosActualizar.motivo_rechazo = motivo.trim() || 'No cumple con los requisitos de impresión.';
   } else {
-    datosActualizar.motivo_rechazo = null; // Limpiar si se aprueba
+    datosActualizar.motivo_rechazo = null; 
   }
 
   const res = await supabase.from('archivos').update(datosActualizar).eq('id_archivo', id);
@@ -1843,7 +1802,6 @@ function renderArchivosNegocio(){
   `).join('');
 }
 
-// El servidor firma una URL temporal de S3; solo la entrega si RLS deja ver ese archivo
 async function descargarSTL(id){
   const { data: { session } } = await supabase.auth.getSession();
   if(!session){ toast('Tu sesión expiró'); return; }
@@ -1855,7 +1813,6 @@ async function descargarSTL(id){
   } catch(err) { console.error(err); toast('No se pudo conectar con el servidor'); }
 }
 
-// ---------- Pedidos ----------
 async function cambiarEstadoCarrito(id, estado){
   const c = state.carritosNegocio.find(x=>x.id===id);
   if(!c || c.estado === estado) return;
