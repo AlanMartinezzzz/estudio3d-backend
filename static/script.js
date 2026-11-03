@@ -32,7 +32,7 @@ const state = {
 function toast(msg){
   let t = document.createElement('div');
   t.textContent = msg;
-  t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#10140f;border:1px solid #2fae6b;color:#f3f5f1;padding:12px 20px;border-radius:8px;font-size:13.5px;max-width:calc(100vw - 32px);text-align:center;z-index:999;box-shadow:0 8px 24px rgba(0,0,0,.5)';
+  t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#161616;border:2px solid #161616;color:#F6F6F4;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;font-family:Outfit,system-ui,sans-serif;max-width:calc(100vw - 32px);text-align:center;z-index:999;box-shadow:4px 4px 0 #FFC21A';
   document.body.appendChild(t);
   setTimeout(()=>t.remove(), 2800);
 }
@@ -1414,7 +1414,7 @@ function renderCatalogo(){
   }
   const q = busquedaCatalogo;
   const lista = q ? state.productos.filter(p => ((p.nombre||'') + ' ' + (p.desc||'')).toLowerCase().includes(q)) : state.productos;
-  const aviso = q ? `<div class="small-note" style="grid-column:1/-1;margin:0 0 4px;">${lista.length} resultado(s) para «${esc(q)}» · <a href="#" onclick="limpiarBusqueda();return false;" style="color:var(--green);">Ver todo</a></div>` : '';
+  const aviso = q ? `<div class="small-note" style="grid-column:1/-1;margin:0 0 4px;">${lista.length} resultado(s) para «${esc(q)}» · <a href="#" onclick="limpiarBusqueda();return false;" style="color:var(--green-ink);font-weight:700;text-decoration:underline;">Ver todo</a></div>` : '';
   if(q && !lista.length){ grid.innerHTML = aviso + `<div class="empty" style="grid-column:1/-1;">No encontramos productos con ese nombre.</div>`; return; }
   grid.innerHTML = aviso + lista.map(p => `
     <div class="prod-card"><h4>${esc(p.nombre)}</h4><p>${esc(p.desc)}</p><div class="price">${Q(p.precio)}</div>
@@ -1925,10 +1925,10 @@ function drawLine(){
   data.forEach((v,i)=>{ html += `<text x="${xFor(i)}" y="${H-6}" class="axis-label" text-anchor="middle">${v.mes}</text>`; });
   const linePts = data.map((v,i)=>`${xFor(i)},${yFor(v.valor)}`).join(' ');
   const areaPts = `${padL},${yFor(0)} ${linePts} ${xFor(data.length-1)},${yFor(0)}`;
-  html += `<defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2fae6b" stop-opacity="0.35"/><stop offset="100%" stop-color="#2fae6b" stop-opacity="0"/></linearGradient></defs>
+  html += `<defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2BD96B" stop-opacity="0.45"/><stop offset="100%" stop-color="#2BD96B" stop-opacity="0"/></linearGradient></defs>
     <polygon points="${areaPts}" fill="url(#areaGrad)"/>
-    <polyline points="${linePts}" fill="none" stroke="#2fae6b" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
-  data.forEach((v,i)=>{ html += `<circle cx="${xFor(i)}" cy="${yFor(v.valor)}" r="4" fill="#0a0c0a" stroke="#2fae6b" stroke-width="2.5"/>`; });
+    <polyline points="${linePts}" fill="none" stroke="#161616" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+  data.forEach((v,i)=>{ html += `<circle cx="${xFor(i)}" cy="${yFor(v.valor)}" r="4.5" fill="#2BD96B" stroke="#161616" stroke-width="2"/>`; });
   svg.innerHTML = html;
 }
 
@@ -1938,16 +1938,16 @@ function drawDonut(){
   const counts = {pendiente:0, progreso:0, entregado:0, cancelado:0};
   state.carritosNegocio.forEach(c=>{ if(counts[c.estado]!==undefined) counts[c.estado]++; });
   const segs = [
-    {estado:'Pendiente', valor:counts.pendiente, color:'#e0b04a'},
-    {estado:'En progreso', valor:counts.progreso, color:'#2fae6b'},
-    {estado:'Entregado', valor:counts.entregado, color:'#cfe8d6'},
-    {estado:'Cancelado', valor:counts.cancelado, color:'#d9584f'},
+    {estado:'Pendiente', valor:counts.pendiente, color:'#FFC21A'},
+    {estado:'En progreso', valor:counts.progreso, color:'#2F6BFF'},
+    {estado:'Entregado', valor:counts.entregado, color:'#2BD96B'},
+    {estado:'Cancelado', valor:counts.cancelado, color:'#FF4F9A'},
   ];
   const total = segs.reduce((a,s)=>a+s.valor,0);
   const cx=90, cy=90, r=64, strokeW=22;
   const circumference = 2*Math.PI*r;
   let offsetAcc = 0;
-  let html = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#181a17" stroke-width="${strokeW}"/>`;
+  let html = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#EFEFEB" stroke-width="${strokeW}"/>`;
   if(total > 0){
     segs.forEach(seg=>{
       const len = (seg.valor/total)*circumference;
@@ -1955,8 +1955,8 @@ function drawDonut(){
       offsetAcc += len;
     });
   }
-  html += `<text x="${cx}" y="${cy-4}" text-anchor="middle" font-family="JetBrains Mono" font-size="20" font-weight="700" fill="#f3f5f1">${total}</text>`;
-  html += `<text x="${cx}" y="${cy+14}" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#93a091">carritos</text>`;
+  html += `<text x="${cx}" y="${cy-4}" text-anchor="middle" font-family="Outfit" font-size="26" font-weight="800" fill="#161616">${total}</text>`;
+  html += `<text x="${cx}" y="${cy+14}" text-anchor="middle" font-family="Outfit" font-size="11" font-weight="600" fill="#555555">carritos</text>`;
   svg.innerHTML = html;
   const legend = document.getElementById('donutLegend');
   if(legend) legend.innerHTML = segs.map(s=>`
