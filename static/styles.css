@@ -717,3 +717,7 @@ td select:focus, td input[type="number"]:focus{outline:none; box-shadow:0 0 0 3p
 #tblProductosNegocio td select{max-width:220px;}
 #tblProductosNegocio .input-gramos input{width:80px;}
 .table-scroll #tblProductosNegocio{min-width:960px;}
+
+/* ---- Catálogo: tarjetas de tamaño fijo (no se estiran si hay pocos productos) ---- */
+.prod-grid{grid-template-columns:repeat(auto-fill, minmax(220px, 260px)); justify-content:start;}
+@media (max-width:600px){ .prod-grid{grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));} .prod-card{padding:14px;} .prod-img{margin:-14px -14px 12px;} .prod-card h4{font-size:15px;} }

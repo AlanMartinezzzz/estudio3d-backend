@@ -330,6 +330,8 @@ async function cargarBase(){
   state.filamentosTodos = (fils.data||[]).map(f=>({ id:f.id_filamento, nombre:f.tipo||'', gramos:Number(f.cantidad)||0, ...partesFilamento(f.tipo) }))
     .filter(f => f.material && f.color);
   state.filamentosDisp = state.filamentosTodos.filter(f => f.gramos > 0);
+  // ¿Esta cuenta puede leer la tabla de filamentos? (si las reglas RLS no lo permiten, viene vacía)
+  state.filamentosVisibles = !!(fils.data && fils.data.length);
   if(cfg.data){
     state.precios = { porGramo: Number(cfg.data.precio_gramo)||0, porHora: Number(cfg.data.precio_hora)||0 };
   }
@@ -338,7 +340,7 @@ async function cargarBase(){
   state.productos  = (prods.data||[]).map(p=>({
     id:p.id_producto, nombre:p.nombre, desc:p.descripcion||'', precio:Number(p.precio)||0,
     imagen:p.imagen_url||'', peso:Number(p.peso_gramos)||0, material:p.material||'', color:p.color||'',
-    existencias:0
+    existencias:0, existenciaGuardada:Number(p.existencia)||0
   }));
   // Las existencias ya no se escriben a mano: salen de los gramos de filamento
   state.productos.forEach(p => { p.existencias = piezasPosibles(p); });
@@ -350,13 +352,15 @@ function filamentoDeProducto(p){
 }
 function piezasPosibles(p, gramosApartados){
   const f = filamentoDeProducto(p);
+  // Si esta cuenta no puede ver los filamentos (cliente), se usa la cifra que el negocio deja guardada en el producto
+  if(!f && !state.filamentosVisibles) return Math.max(0, p.existenciaGuardada - Math.ceil((gramosApartados||0) / (p.peso || 1)));
   if(!f || !(p.peso > 0)) return 0;
   return Math.max(0, Math.floor((f.gramos - (gramosApartados||0)) / p.peso));
 }
 // Gramos que ya ocupan en el carrito otros productos del mismo filamento
 function gramosEnCarrito(p, excluirId){
   const f = filamentoDeProducto(p);
-  if(!f) return 0;
+  if(!f) return 0;   // sin acceso a filamentos: cada producto se limita por su propia cifra guardada
   return state.carrito.filter(l=>l.tipo==='producto' && l.ref!==excluirId).reduce((a,l)=>{
     const q = state.productos.find(x=>x.id===l.ref);
     return a + (q && filamentoDeProducto(q) === f ? q.peso * l.cantidad : 0);
@@ -1606,6 +1610,10 @@ async function _confirmarPedido(){
     if(l.tipo === 'producto'){
       const p = state.productos.find(x=>x.id===l.ref);
       const f = filamentoDeProducto(p);
+      if(p && !f && !state.filamentosVisibles){
+        if(p.existencias < l.cantidad){ toast(`"${l.nombre}" ya no tiene suficientes piezas disponibles`); renderCatalogo(); return; }
+        continue;
+      }
       if(!p || !f || !(p.peso > 0)){ toast(`"${l.nombre}" ya no está disponible`); renderCatalogo(); return; }
       pedidoPorFil.set(f, (pedidoPorFil.get(f)||0) + p.peso * l.cantidad);
     }
@@ -1868,7 +1876,24 @@ async function quitarProducto(id){
   toast('Producto eliminado');
 }
 
+let sincronizando = false;
+async function sincronizarExistencias(){
+  if(sincronizando || !state.filamentosVisibles) return;
+  sincronizando = true;
+  try {
+    for(const p of state.productos){
+      if(!filamentoDeProducto(p) || !(p.peso > 0)) continue;
+      const n = piezasPosibles(p);
+      if(n !== p.existenciaGuardada){
+        const r = await supabase.from('productos').update({ existencia: n }).eq('id_producto', p.id);
+        if(!r.error) p.existenciaGuardada = n; else console.warn('No se pudo sincronizar existencias de', p.nombre, r.error);
+      }
+    }
+  } finally { sincronizando = false; }
+}
+
 function renderProductosNegocio(){
+  sincronizarExistencias();
   const tb = document.querySelector('#tblProductosNegocio tbody');
   if(!tb) return;
   const sf = document.getElementById('np-filamento');
