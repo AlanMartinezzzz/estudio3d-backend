@@ -429,7 +429,7 @@
           <div class="bar-list" id="topProductos"></div>
         </div>
         <div class="panel">
-          <div class="phead"><div><h3>Inventario de filamento</h3><span class="sub">% restante por carrete</span></div></div>
+          <div class="phead"><div><h3>Inventario de filamento</h3><span class="sub">Gramos disponibles · barra sobre 1 kg</span></div></div>
           <div class="bar-list" id="filamentoList"></div>
         </div>
       </div>
@@ -488,17 +488,18 @@
 
     <!-- FILAMENTOS -->
     <div class="view" id="n-filamentos">
-      <div class="header"><div><h2>Filamentos</h2><p>Registra tus carretes y actualiza cuánto les queda.</p></div></div>
+      <div class="header"><div><h2>Filamentos</h2><p>Registra tus carretes en gramos. Al aprobar una pieza se descuenta lo que usa.</p></div></div>
       <div class="panel">
         <div class="form-grid">
-          <div class="field"><label>Tipo y color</label><input id="nf-tipo" placeholder="Ej. PLA · Negro"></div>
-          <div class="field"><label>% restante</label><input type="number" id="nf-restante" min="0" max="100" step="1" placeholder="100"></div>
+          <div class="field"><label for="nf-material">Material</label><select id="nf-material"></select></div>
+          <div class="field"><label for="nf-color">Color</label><select id="nf-color"></select></div>
+          <div class="field"><label for="nf-gramos">Cantidad (gramos)</label><input type="number" id="nf-gramos" min="1" step="1" placeholder="1000"></div>
           <div class="field"><label>Costo del carrete (Q)</label><input type="number" id="nf-costo" min="0" step="0.01" placeholder="Opcional"></div>
         </div>
         <div style="margin-top:16px;"><button class="btn btn-primary btn-sm" onclick="formAgregarFilamento()">Registrar filamento</button></div>
       </div>
       <div class="panel table-scroll" style="padding:0; margin-top:16px;">
-        <table id="tblFilamentos"><thead><tr><th>Filamento</th><th>Restante</th><th>Costo</th><th></th></tr></thead><tbody></tbody></table>
+        <table id="tblFilamentos"><thead><tr><th>Filamento</th><th>Disponible</th><th>Costo</th><th></th></tr></thead><tbody></tbody></table>
       </div>
     </div>
 
@@ -512,7 +513,12 @@
 
     <!-- CARRITOS -->
     <div class="view" id="n-carritos">
-      <div class="header"><div><h2>Carritos</h2><p>Pedidos confirmados por los clientes. Cambia su estado según avance.</p></div></div>
+      <div class="header"><div><h2>Carritos</h2><p>Pedidos confirmados por los clientes. Cambia su estado según avance.</p></div>
+        <div class="seg" role="group" aria-label="Qué carritos ver">
+          <button type="button" class="seg-btn active" data-vista="curso" aria-pressed="true" onclick="cambiarVistaCarritos('curso')">En curso <span class="seg-num" id="cntCurso">0</span></button>
+          <button type="button" class="seg-btn" data-vista="finalizados" aria-pressed="false" onclick="cambiarVistaCarritos('finalizados')">Finalizados <span class="seg-num" id="cntFinal">0</span></button>
+        </div>
+      </div>
       <div class="panel table-scroll" style="padding:0;">
         <table id="tblCarritosNegocio"><thead><tr><th>Carrito</th><th>Cliente</th><th>Detalle</th><th>Total</th><th>Estado</th><th>Fecha</th></tr></thead><tbody></tbody></table>
       </div>

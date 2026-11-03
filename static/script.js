@@ -319,12 +319,16 @@ async function registrarse() {
 
 /* ===================== CARGA DE DATOS DESDE LA BASE ===================== */
 async function cargarBase(){
-  const [cfg, mats, cols, prods] = await Promise.all([
+  const [cfg, mats, cols, prods, fils] = await Promise.all([
     supabase.from('configuracion').select('*').eq('id', 1).maybeSingle(),
     supabase.from('materiales').select('*').order('id'),
     supabase.from('colores').select('*').order('id'),
     supabase.from('productos').select('*').order('id_producto'),
+    supabase.from('filamentos').select('id_filamento, tipo, cantidad').order('id_filamento'),
   ]);
+  // Filamentos con existencia: es lo único que el cliente puede elegir al cotizar
+  state.filamentosDisp = (fils.data||[]).map(f=>({ id:f.id_filamento, nombre:f.tipo||'', gramos:Number(f.cantidad)||0, ...partesFilamento(f.tipo) }))
+    .filter(f => f.gramos > 0 && f.material && f.color);
   if(cfg.data){
     state.precios = { porGramo: Number(cfg.data.precio_gramo)||0, porHora: Number(cfg.data.precio_hora)||0 };
   }
@@ -444,6 +448,13 @@ function initCliente(){
     dz.addEventListener('drop', e=>{ e.preventDefault(); dz.classList.remove('drag'); if(e.dataTransfer.files[0]) handleSTL(e.dataTransfer.files[0]); });
     input.addEventListener('change', e=>{ if(e.target.files[0]) handleSTL(e.target.files[0]); });
   }
+
+  const selMaterial = document.getElementById('q-material');
+  if(selMaterial) selMaterial.addEventListener('change', () => {
+    actualizarColoresCliente();
+    actualizarPesoTiempo();
+    if(state.lastQuote) calcularCotizacion();
+  });
 
   ['q-infill', 'q-material', 'q-color', 'q-cantidad'].forEach(id => {
     const el = document.getElementById(id);
@@ -1002,6 +1013,30 @@ function limpiarBusqueda(){
   renderCatalogo();
 }
 
+/* ---- Filamentos: el tipo se guarda como "Material · Color" y la cantidad en gramos ---- */
+const GRAMOS_CARRETE = 1000;   // referencia para la barra del resumen (carrete estándar de 1 kg)
+function partesFilamento(tipo){
+  const p = String(tipo||'').split('·').map(x=>x.trim()).filter(Boolean);
+  return p.length >= 2 ? { material:p[0], color:p.slice(1).join(' · ') } : { material:'', color:p[0]||'' };
+}
+const mismoTexto = (a,b) => String(a||'').trim().toLowerCase() === String(b||'').trim().toLowerCase();
+function filamentoPara(lista, material, color){
+  return (lista||[]).find(f=>{ const x = f.material !== undefined ? f : partesFilamento(f.nombre); return mismoTexto(x.material, material) && mismoTexto(x.color, color); });
+}
+const gramosTxt = g => (Math.round(g*10)/10).toLocaleString('es-GT') + ' g';
+
+function actualizarColoresCliente(){
+  const matSelect = document.getElementById('q-material');
+  const colorSelect = document.getElementById('q-color');
+  if(!matSelect || !colorSelect) return;
+  const colPrev = colorSelect.value;
+  const disp = (state.filamentosDisp||[]).filter(f=>mismoTexto(f.material, matSelect.value));
+  colorSelect.innerHTML = disp.length
+    ? disp.map(f=>`<option value="${esc(f.color)}">${esc(f.color)}</option>`).join('')
+    : `<option value="">Sin colores disponibles</option>`;
+  if(colPrev && disp.some(f=>f.color===colPrev)) colorSelect.value = colPrev;
+}
+
 function populateSelects(){
   const matSelect = document.getElementById('q-material');
   const colorSelect = document.getElementById('q-color');
@@ -1009,17 +1044,18 @@ function populateSelects(){
   const matPrev = matSelect ? matSelect.value : '';
   const colPrev = colorSelect ? colorSelect.value : '';
 
+  // Solo materiales que el negocio tiene en filamento (con gramos disponibles)
+  const disp = state.filamentosDisp || [];
+  const materialesDisp = state.materiales.filter(m => disp.some(f=>mismoTexto(f.material, m.nombre)));
   if(matSelect){
-    matSelect.innerHTML = state.materiales.length
-      ? state.materiales.map(m=>`<option value="${esc(m.nombre)}">${esc(m.nombre)}</option>`).join('')
-      : `<option value="">Sin materiales</option>`;
-    if(matPrev) matSelect.value = matPrev;
+    matSelect.innerHTML = materialesDisp.length
+      ? materialesDisp.map(m=>`<option value="${esc(m.nombre)}">${esc(m.nombre)}</option>`).join('')
+      : `<option value="">Sin filamentos disponibles</option>`;
+    if(matPrev && materialesDisp.some(m=>m.nombre===matPrev)) matSelect.value = matPrev;
   }
   if(colorSelect){
-    colorSelect.innerHTML = state.colores.length
-      ? state.colores.map(c=>`<option value="${esc(c.nombre)}">${esc(c.nombre)}</option>`).join('')
-      : `<option value="">Sin colores</option>`;
-    if(colPrev) colorSelect.value = colPrev;
+    actualizarColoresCliente();
+    if(colPrev && [...colorSelect.options].some(o=>o.value===colPrev)) colorSelect.value = colPrev;
   }
   if(pill) pill.textContent = (state.precios.porGramo > 0 && state.precios.porHora > 0)
     ? `Q${state.precios.porGramo.toFixed(2)}/g · Q${state.precios.porHora.toFixed(2)}/h`
@@ -1234,6 +1270,10 @@ function calcularCotizacion() {
   if(cant > MAX_CANTIDAD){ cant = MAX_CANTIDAD; toast(`La cantidad máxima por cotización es ${MAX_CANTIDAD}. Para más piezas contáctanos.`); }
   if(cantIn) cantIn.value = cant;
   const material = state.materiales.find(m => m.nombre === materialNombre);
+  if(!filamentoPara(state.filamentosDisp, materialNombre, color)){
+    toast('Ese material y color no está disponible. Elige uno de la lista.');
+    return;
+  }
 
   if(!material){ toast('Elige un material'); return; }
   if(!color){ toast('Elige un color'); return; }
@@ -1683,6 +1723,7 @@ async function quitarColor(id){
 }
 
 function renderMaterialesColores(){
+  rellenarFormFilamento();
   const lm = document.getElementById('listaMateriales');
   const lc = document.getElementById('listaColores');
   if(lm) lm.innerHTML = state.materiales.length
@@ -1700,21 +1741,31 @@ function rellenarPreciosNegocio(){
 }
 
 async function formAgregarFilamento(){
-  const tipo = val('nf-tipo'), rest = parseInt(val('nf-restante')), costo = parseFloat(val('nf-costo'));
-  if(!tipo || isNaN(rest) || rest < 0 || rest > 100){ toast('Escribe el tipo/color y un % entre 0 y 100'); return; }
-  const res = await supabase.from('filamentos').insert({ tipo, cantidad: rest, precio_costo: isNaN(costo) ? null : costo });
+  const material = val('nf-material'), color = val('nf-color');
+  const gramos = parseFloat(val('nf-gramos')), costo = parseFloat(val('nf-costo'));
+  if(!material || !color){ toast('Elige el material y el color del filamento'); return; }
+  if(isNaN(gramos) || gramos <= 0){ toast('Escribe cuántos gramos tiene el carrete'); return; }
+  const tipo = `${material} · ${color}`;
+  const existente = filamentoPara(state.filamentos, material, color);
+  let res;
+  if(existente){
+    // Mismo material y color: se suman los gramos al registro que ya existe
+    res = await supabase.from('filamentos').update({ cantidad: Math.round(existente.restante + gramos) }).eq('id_filamento', existente.id);
+  } else {
+    res = await supabase.from('filamentos').insert({ tipo, cantidad: Math.round(gramos), precio_costo: isNaN(costo) ? null : costo });
+  }
   if(!okDB(res, 'No se pudo registrar el filamento')) return;
-  limpiar('nf-tipo','nf-restante','nf-costo');
-  await cargarNegocio(); renderFilamentosNegocio(); drawFilamentos();
-  toast('Filamento registrado');
+  limpiar('nf-gramos','nf-costo');
+  await cargarNegocio(); renderFilamentosNegocio(); drawFilamentos(); renderArchivosNegocio();
+  toast(existente ? `Se sumaron ${gramosTxt(gramos)} a ${tipo}` : 'Filamento registrado');
 }
 
 async function cambiarRestante(id, valor){
-  const r = parseInt(valor);
-  if(isNaN(r) || r < 0 || r > 100){ toast('Debe ser un % entre 0 y 100'); renderFilamentosNegocio(); return; }
-  const res = await supabase.from('filamentos').update({ cantidad: r }).eq('id_filamento', id);
+  const g = parseFloat(valor);
+  if(isNaN(g) || g < 0){ toast('Escribe una cantidad de gramos válida'); renderFilamentosNegocio(); return; }
+  const res = await supabase.from('filamentos').update({ cantidad: Math.round(g) }).eq('id_filamento', id);
   if(!okDB(res, 'No se pudo actualizar')) return;
-  await cargarNegocio(); renderFilamentosNegocio(); drawFilamentos();
+  await cargarNegocio(); renderFilamentosNegocio(); drawFilamentos(); renderArchivosNegocio();
 }
 
 async function quitarFilamento(id){
@@ -1723,13 +1774,20 @@ async function quitarFilamento(id){
   await cargarNegocio(); renderFilamentosNegocio(); drawFilamentos();
 }
 
+function rellenarFormFilamento(){
+  const m = document.getElementById('nf-material'), c = document.getElementById('nf-color');
+  if(m){ const prev = m.value; m.innerHTML = state.materiales.length ? state.materiales.map(x=>`<option value="${esc(x.nombre)}">${esc(x.nombre)}</option>`).join('') : '<option value="">Agrega materiales primero</option>'; if(prev) m.value = prev; }
+  if(c){ const prev = c.value; c.innerHTML = state.colores.length ? state.colores.map(x=>`<option value="${esc(x.nombre)}">${esc(x.nombre)}</option>`).join('') : '<option value="">Agrega colores primero</option>'; if(prev) c.value = prev; }
+}
+
 function renderFilamentosNegocio(){
+  rellenarFormFilamento();
   const tb = document.querySelector('#tblFilamentos tbody');
   if(!tb) return;
   if(!state.filamentos.length){ tb.innerHTML = `<tr><td colspan="4" class="empty">Aún no has registrado filamentos.</td></tr>`; return; }
   tb.innerHTML = state.filamentos.map(f => `
-    <tr><td class="strong">${esc(f.nombre)}</td>
-    <td><input type="number" min="0" max="100" value="${f.restante}" style="width:80px" onchange="cambiarRestante(${f.id}, this.value)"> %</td>
+    <tr><td class="strong">${esc(f.nombre)}${partesFilamento(f.nombre).material ? '' : '<br><span class="small-note" style="color:var(--danger);">Sin material: vuelve a registrarlo como Material · Color</span>'}</td>
+    <td><span class="input-gramos"><input type="number" min="0" step="1" value="${f.restante}" onchange="cambiarRestante(${f.id}, this.value)" aria-label="Gramos de ${esc(f.nombre)}"> g</span></td>
     <td>${f.costo ? Q(f.costo) : '—'}</td>
     <td><button class="btn btn-sm" onclick="quitarFilamento(${f.id})">Quitar</button></td></tr>
   `).join('');
@@ -1780,12 +1838,42 @@ async function revisarArchivo(id, estado){
     datosActualizar.motivo_rechazo = null; 
   }
 
+  // Antes de aprobar: ¿hay filamento de ese material y color, y alcanza?
+  let fil = null, gramos = 0;
+  if (estado === 'aprobada') {
+    await cargarNegocio();   // datos frescos, por si otro trabajador acaba de usar filamento
+    const a = state.archivosNegocio.find(x=>x.id===id);
+    if(!a){ toast('No se encontró el archivo'); return; }
+    gramos = Math.ceil(a.peso);
+    fil = filamentoPara(state.filamentos, a.material, a.color);
+    if(!fil){
+      toast(`No tienes filamento ${a.material} · ${a.color} registrado. Agrégalo en Filamentos.`);
+      renderArchivosNegocio(); return;
+    }
+    if(fil.restante < gramos){
+      toast(`No alcanza el filamento ${fil.nombre}: necesitas ${gramosTxt(gramos)} y quedan ${gramosTxt(fil.restante)}.`);
+      renderArchivosNegocio(); return;
+    }
+  }
+
   const res = await supabase.from('archivos').update(datosActualizar).eq('id_archivo', id);
   if(!okDB(res, 'No se pudo actualizar')) return;
-  
-  await cargarNegocio(); 
-  renderArchivosNegocio();
-  toast(estado === 'aprobada' ? 'Archivo aprobado' : 'Archivo rechazado');
+
+  if (fil) {
+    const desc = await supabase.from('filamentos').update({ cantidad: Math.max(0, Math.round(fil.restante - gramos)) }).eq('id_filamento', fil.id);
+    if(desc.error){ console.error(desc.error); toast('Archivo aprobado, pero no se pudo descontar el filamento. Revísalo en Filamentos.'); }
+  }
+
+  await cargarNegocio();
+  renderArchivosNegocio(); renderFilamentosNegocio(); drawFilamentos();
+  toast(estado === 'aprobada' ? `Archivo aprobado · se descontaron ${gramosTxt(gramos)} de ${fil.nombre}` : 'Archivo rechazado');
+}
+
+function stockArchivo(a){
+  const f = filamentoPara(state.filamentos, a.material, a.color);
+  if(!f) return '<br><span class="stock-tag stock-no">Sin filamento</span>';
+  const ok = f.restante >= Math.ceil(a.peso);
+  return `<br><span class="stock-tag ${ok?'stock-ok':'stock-no'}">${ok?'Hay':'Faltan'} · quedan ${gramosTxt(f.restante)}</span>`;
 }
 
 function renderArchivosNegocio(){
@@ -1793,7 +1881,7 @@ function renderArchivosNegocio(){
   if(!tb) return;
   if(!state.archivosNegocio.length){ tb.innerHTML = `<tr><td colspan="7" class="empty">Aún no hay archivos de clientes.</td></tr>`; return; }
   tb.innerHTML = state.archivosNegocio.map(a => `
-    <tr><td>${esc(a.cliente)}</td><td class="strong">${esc(a.nombre)}</td><td>${esc(a.material)} · ${esc(a.color)}</td>
+    <tr><td>${esc(a.cliente)}</td><td class="strong">${esc(a.nombre)}</td><td>${esc(a.material)} · ${esc(a.color)}${a.estado==='pendiente' ? stockArchivo(a) : ''}</td>
     <td>${a.peso.toFixed(1)} g · ${a.tiempo.toFixed(1)} h</td><td class="strong">${Q(a.precio)}</td><td>${badgeEstadoArchivo(a.estado)}</td>
     <td>${a.estado==='pendiente'
       ? `<button class="btn btn-sm btn-primary" onclick="revisarArchivo(${a.id}, 'aprobada')">Aprobar</button> <button class="btn btn-sm" onclick="revisarArchivo(${a.id}, 'rechazada')">Rechazar</button>`
@@ -1846,7 +1934,7 @@ async function cambiarEstadoCarrito(id, estado){
 
   await cargarBase(); await cargarNegocio();
   refrescarNegocio();
-  toast('Estado actualizado');
+  toast(FINALIZADOS.includes(estado) ? `${c.label} pasó a «Finalizados»` : 'Estado actualizado');
 }
 
 /* ===================== NEGOCIO: MÉTRICAS ===================== */
@@ -2101,8 +2189,8 @@ function drawFilamentos(){
   if(!el) return;
   if(!state.filamentos.length){ el.innerHTML = `<div class="empty">Aún no has registrado filamentos.</div>`; return; }
   el.innerHTML = state.filamentos.map(f=>`
-    <div class="bar-row"><div class="top-row"><span class="name">${esc(f.nombre)}</span><span class="num">${f.restante}%</span></div>
-    <div class="bar-track"><div class="bar-fill ${f.restante<30?'warn':''}" style="width:${f.restante}%"></div></div></div>
+    <div class="bar-row"><div class="top-row"><span class="name">${esc(f.nombre)}</span><span class="num">${gramosTxt(f.restante)}</span></div>
+    <div class="bar-track"><div class="bar-fill ${f.restante<200?'warn':''}" style="width:${Math.min(100, f.restante/GRAMOS_CARRETE*100)}%"></div></div></div>
   `).join('');
 }
 
@@ -2124,17 +2212,37 @@ function renderCamaras(){
   `).join('');
 }
 
+let vistaCarritos = 'curso';
+const FINALIZADOS = ['entregado','cancelado'];
+function cambiarVistaCarritos(vista){
+  vistaCarritos = vista === 'finalizados' ? 'finalizados' : 'curso';
+  renderPedidosNegocioTable();
+}
+
 function renderPedidosNegocioTable(){
   const tb = document.querySelector('#tblCarritosNegocio tbody');
   if(!tb) return;
-  if(!state.carritosNegocio.length){ tb.innerHTML = `<tr><td colspan="6" class="empty">Aún no hay carritos de clientes.</td></tr>`; return; }
+  const enCurso = state.carritosNegocio.filter(c=>!FINALIZADOS.includes(c.estado));
+  const finalizados = state.carritosNegocio.filter(c=>FINALIZADOS.includes(c.estado));
+  const nC = document.getElementById('cntCurso'), nF = document.getElementById('cntFinal');
+  if(nC) nC.textContent = enCurso.length;
+  if(nF) nF.textContent = finalizados.length;
+  document.querySelectorAll('.seg-btn[data-vista]').forEach(b=>{
+    const on = b.dataset.vista === vistaCarritos;
+    b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  const lista = vistaCarritos === 'curso' ? enCurso : finalizados;
+  if(!lista.length){
+    tb.innerHTML = `<tr><td colspan="6" class="empty">${vistaCarritos==='curso' ? 'No hay pedidos en curso. Los entregados y cancelados están en «Finalizados».' : 'Aún no hay pedidos entregados ni cancelados.'}</td></tr>`;
+    return;
+  }
   const opciones = ['pendiente','progreso','entregado','cancelado'];
   const etiquetas = { pendiente:'Pendiente', progreso:'En progreso', entregado:'Entregado', cancelado:'Cancelado' };
-  tb.innerHTML = state.carritosNegocio.map(c=>`
+  tb.innerHTML = lista.map(c=>`
     <tr><td class="strong">${c.label}</td><td>${esc(c.cliente)}</td>
     <td>${esc(c.items.map(i=>`${i.nombre} x ${i.cantidad}`).join(', '))}</td>
     <td class="strong">${Q(c.total)}</td>
-    <td><select onchange="cambiarEstadoCarrito(${c.id}, this.value)">
+    <td><select class="estado-sel estado-${c.estado}" onchange="cambiarEstadoCarrito(${c.id}, this.value)" aria-label="Estado de ${c.label}">
       ${opciones.map(o=>`<option value="${o}" ${o===c.estado?'selected':''}>${etiquetas[o]}</option>`).join('')}
     </select></td><td>${c.fecha}</td></tr>
   `).join('');

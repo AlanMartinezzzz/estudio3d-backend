@@ -646,3 +646,25 @@ select{color-scheme:light;}
 [data-theme="oscuro"] .chart-tip{box-shadow:3px 3px 0 var(--gold);}
 [data-theme="oscuro"] .donut-wrap .legend-item{border-color:#2C2C33;}
 [data-theme="oscuro"] #login-modal .panel{border-color:#3A3A42;}
+
+/* ---- Selects y números dentro de tablas (estado del carrito, gramos) ---- */
+td select, td input[type="number"]{
+  background:var(--card); color:var(--text); border:var(--border); border-radius:8px;
+  padding:6px 10px; font-family:inherit; font-size:13.5px; font-weight:600; box-shadow:2px 2px 0 var(--stroke);
+}
+td select{cursor:pointer;}
+td select:focus, td input[type="number"]:focus{outline:none; box-shadow:0 0 0 3px var(--gold);}
+.estado-sel.estado-pendiente{background:var(--gold); color:var(--on-accent);}
+.estado-sel.estado-progreso{background:var(--blue); color:#fff;}
+.estado-sel.estado-entregado{background:var(--green); color:var(--on-accent);}
+.estado-sel.estado-cancelado{background:var(--pink); color:var(--on-accent);}
+.estado-sel option{background:var(--card); color:var(--text);}
+.input-gramos{display:inline-flex; align-items:center; gap:6px; font-weight:700;}
+.input-gramos input{width:110px;}
+.seg-num{display:inline-block; min-width:20px; margin-left:4px; padding:0 6px; border-radius:10px; font-size:11.5px; background:var(--ink); color:var(--paper);}
+.seg-btn.active .seg-num{background:var(--on-accent); color:var(--gold);}
+.stock-tag{display:inline-block; margin-top:4px; font-size:11.5px; font-weight:700; padding:1px 8px; border-radius:20px; border:2px solid var(--stroke); color:var(--on-accent);}
+.stock-ok{background:var(--green);}
+.stock-no{background:var(--pink);}
+[data-theme="oscuro"] td select, [data-theme="oscuro"] td input[type="number"]{border-color:#3A3A42;}
+[data-theme="oscuro"] .stock-tag{border-color:#000;}
