@@ -668,3 +668,52 @@ td select:focus, td input[type="number"]:focus{outline:none; box-shadow:0 0 0 3p
 .stock-no{background:var(--pink);}
 [data-theme="oscuro"] td select, [data-theme="oscuro"] td input[type="number"]{border-color:#3A3A42;}
 [data-theme="oscuro"] .stock-tag{border-color:#000;}
+
+/* ---- Fotos de productos ---- */
+.prod-card{display:flex; flex-direction:column;}
+.prod-img{margin:-18px -18px 14px; aspect-ratio:4 / 3; border-bottom:var(--border); border-radius:12px 12px 0 0; overflow:hidden; background:var(--inset);}
+.prod-img img{width:100%; height:100%; object-fit:cover; display:block;}
+.prod-img-vacia{display:block; width:100%; height:100%;
+  background:
+    linear-gradient(var(--stroke) 0 0) center calc(50% - 10px)/56px 7px no-repeat,
+    linear-gradient(var(--green) 0 0) center 50%/56px 7px no-repeat,
+    linear-gradient(var(--stroke) 0 0) center calc(50% + 10px)/56px 7px no-repeat,
+    radial-gradient(circle, rgba(22,22,22,.12) 1.2px, transparent 1.6px) 0 0/12px 12px,
+    var(--inset);}
+.prod-card .btn{margin-top:auto; align-self:flex-start;}
+.prod-celda{display:flex; align-items:center; gap:12px;}
+.prod-thumb{width:52px; height:52px; flex-shrink:0; border-radius:10px; border:var(--border); background:var(--inset); color:var(--text-dim); display:flex; align-items:center; justify-content:center; overflow:hidden; padding:0; box-shadow:2px 2px 0 var(--stroke);}
+.prod-thumb:hover{background:var(--gold); color:var(--on-accent);}
+.prod-thumb img{width:100%; height:100%; object-fit:cover;}
+.foto-box{position:relative; display:flex; align-items:center; justify-content:center; gap:10px; min-height:96px; padding:16px; border:2.5px dashed var(--stroke); border-radius:12px; background:var(--inset); cursor:pointer; color:var(--text-dim); font-size:14px; text-align:center;}
+.foto-box:hover{background:#E8FBEF;}
+.foto-box-txt{display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:center;}
+.foto-box-txt b{color:var(--text);}
+.foto-box img{display:none; width:120px; height:90px; object-fit:cover; border-radius:8px; border:var(--border);}
+.foto-box-quitar{display:none;}
+.foto-box.con-foto{justify-content:flex-start; border-style:solid;}
+.foto-box.con-foto img, .foto-box.con-foto .foto-box-quitar{display:block;}
+.foto-box.con-foto .foto-box-txt b::after{content:' (cambiar)'; font-weight:600; color:var(--text-dim);}
+[data-theme="oscuro"] .foto-box{border-color:#5A5A62;}
+[data-theme="oscuro"] .foto-box:hover{background:#16261C;}
+[data-theme="oscuro"] .prod-img, [data-theme="oscuro"] .prod-thumb{border-color:#3A3A42;}
+[data-theme="oscuro"] .prod-img-vacia{background:
+    linear-gradient(#F1EFEA 0 0) center calc(50% - 10px)/56px 7px no-repeat,
+    linear-gradient(var(--green) 0 0) center 50%/56px 7px no-repeat,
+    linear-gradient(#F1EFEA 0 0) center calc(50% + 10px)/56px 7px no-repeat,
+    radial-gradient(circle, rgba(255,255,255,.08) 1.2px, transparent 1.6px) 0 0/12px 12px, var(--inset);}
+@media (max-width:600px){ .foto-box.con-foto{flex-direction:column;} }
+.prod-card .price{align-self:flex-start;}
+.foto-box.con-foto{display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:16px; text-align:left;}
+.foto-box.con-foto .foto-box-txt{justify-content:flex-start;}
+@media (max-width:600px){ .foto-box.con-foto{grid-template-columns:1fr; justify-items:center; text-align:center;} .foto-box.con-foto .foto-box-txt{justify-content:center;} }
+
+/* ---- Productos: cuántas piezas alcanzan con el filamento ---- */
+.alcance{margin:0; padding:10px 14px; border-radius:10px; border:2px dashed var(--line-soft); font-size:14px; font-weight:600; color:var(--text-dim);}
+.alcance-ok{border:var(--border); background:#E8FBEF; color:var(--on-accent);}
+.alcance-no{border:var(--border); background:#FFE6F1; color:var(--on-accent);}
+[data-theme="oscuro"] .alcance-ok{background:#16261C; color:var(--text); border-color:#3A3A42;}
+[data-theme="oscuro"] .alcance-no{background:#2D1823; color:var(--text); border-color:#3A3A42;}
+#tblProductosNegocio td select{max-width:220px;}
+#tblProductosNegocio .input-gramos input{width:80px;}
+.table-scroll #tblProductosNegocio{min-width:960px;}

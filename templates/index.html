@@ -437,18 +437,29 @@
 
     <!-- PRODUCTOS -->
     <div class="view" id="n-productos">
-      <div class="header"><div><h2>Productos</h2><p>Lo que agregues aquí aparece en el catálogo de tus clientes.</p></div></div>
+      <div class="header"><div><h2>Productos</h2><p>Lo que agregues aquí aparece en el catálogo. Las piezas disponibles se calculan con tus gramos de filamento.</p></div></div>
       <div class="panel">
         <div class="form-grid">
           <div class="field"><label>Nombre</label><input id="np-nombre" placeholder="Ej. Maceta geométrica"></div>
           <div class="field"><label>Descripción</label><input id="np-desc" placeholder="Ej. Diseño facetado, 12 cm"></div>
           <div class="field"><label>Precio (Q)</label><input type="number" id="np-precio" min="0" step="0.01" placeholder="0.00"></div>
-          <div class="field"><label>Existencias</label><input type="number" id="np-exist" min="0" step="1" placeholder="0"></div>
+          <div class="field"><label for="np-filamento">Filamento</label><select id="np-filamento" onchange="actualizarAlcanceProducto()"></select></div>
+          <div class="field"><label for="np-peso">Peso por pieza (g)</label><input type="number" id="np-peso" min="0.1" step="0.1" placeholder="Ej. 20" oninput="actualizarAlcanceProducto()"></div>
+          <div class="field span-2"><p class="alcance" id="np-alcance" role="status">Elige el filamento y el peso para ver cuántas piezas alcanzan.</p></div>
+          <div class="field span-2"><label for="np-foto">Foto del producto <span class="opt">(opcional)</span></label>
+            <label class="foto-box" id="np-foto-box" for="np-foto">
+              <img id="np-foto-prev" alt="Vista previa de la foto">
+              <span class="foto-box-txt"><svg class="ico" aria-hidden="true"><use href="#i-camera"/></svg><b>Elegir foto</b> JPG, PNG o WebP · máx. 5 MB</span>
+              <button type="button" class="btn btn-sm foto-box-quitar" onclick="quitarFotoNueva(event)">Quitar foto</button>
+            </label>
+            <input type="file" id="np-foto" accept="image/jpeg,image/png,image/webp" hidden onchange="alElegirFotoNueva(event)">
+          </div>
         </div>
-        <div style="margin-top:16px;"><button class="btn btn-primary btn-sm" onclick="formAgregarProducto()">Agregar al catálogo</button></div>
+        <input type="file" id="np-foto-cambiar" accept="image/jpeg,image/png,image/webp" hidden onchange="alCambiarFotoProducto(event)">
+        <div style="margin-top:16px;"><button class="btn btn-primary btn-sm" id="btnAgregarProducto" onclick="formAgregarProducto()">Agregar al catálogo</button></div>
       </div>
       <div class="panel table-scroll" style="padding:0; margin-top:16px;">
-        <table id="tblProductosNegocio"><thead><tr><th>Producto</th><th>Descripción</th><th>Precio (Q)</th><th>Existencias</th><th></th></tr></thead><tbody></tbody></table>
+        <table id="tblProductosNegocio"><thead><tr><th>Producto</th><th>Descripción</th><th>Precio (Q)</th><th>Filamento</th><th>Peso</th><th>Disponibles</th><th></th></tr></thead><tbody></tbody></table>
       </div>
     </div>
 
