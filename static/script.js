@@ -1645,12 +1645,22 @@ async function _confirmarPedido(){
     id_producto: l.tipo==='producto' ? l.ref : null,
     nombre: l.nombre, precio: l.precio, cantidad: l.cantidad
   }));
+  // Al guardar los artículos, Supabase descuenta el filamento de los productos (todo o nada)
   const det = await supabase.from('carrito_items').insert(items);
-  if(!okDB(det, 'No se pudieron guardar los productos del pedido')) return;
+  if(det.error){
+    console.error(det.error);
+    await supabase.from('carritos').delete().eq('id_carrito', cab.data.id_carrito);   // no dejar un pedido vacío
+    const sinFil = /filamento/i.test(det.error.message || '');
+    toast(sinFil ? 'No se pudo confirmar: ' + det.error.message + '. Baja algunas cantidades.' : 'No se pudieron guardar los productos del pedido: ' + det.error.message);
+    await cargarBase(); renderCatalogo();
+    return;
+  }
 
   state.carrito = [];
+  await cargarBase();        // las piezas disponibles ya bajaron
   await cargarCliente();
   refrescarCliente();
+  if(typeof renderCatalogo === 'function') renderCatalogo();
   toast('Pedido confirmado y enviado al negocio');
   irAVista('v-pedidos');
 }
@@ -2135,46 +2145,24 @@ async function descargarSTL(id){
   } catch(err) { console.error(err); toast('No se pudo conectar con el servidor'); }
 }
 
-const CONSUME_FILAMENTO = ['progreso','entregado'];   // en estos estados la pieza ya usó filamento
-
+// El filamento de los productos se descuenta al CONFIRMAR el carrito y se devuelve si se CANCELA.
+// Eso lo hace Supabase con triggers (ver SQL), así funciona aunque el cliente no tenga permiso sobre filamentos.
 async function cambiarEstadoCarrito(id, estado){
   const c = state.carritosNegocio.find(x=>x.id===id);
   if(!c || c.estado === estado) return;
-  const antes = CONSUME_FILAMENTO.includes(c.estado), despues = CONSUME_FILAMENTO.includes(estado);
-  const delta = antes === despues ? 0 : (despues ? -1 : +1);   // -1 descuenta, +1 devuelve
-
-  // Gramos por filamento de los productos de catálogo de este carrito
-  await cargarBase();
-  const porFil = new Map();
-  for(const it of c.items.filter(i=>i.idProducto)){
-    const p = state.productos.find(x=>x.id===it.idProducto);
-    const f = filamentoDeProducto(p);
-    if(p && f && p.peso > 0) porFil.set(f, (porFil.get(f)||0) + Math.ceil(p.peso * it.cantidad));
-  }
-  if(delta === -1){
-    for(const [f, g] of porFil){
-      if(f.gramos < g){
-        toast(`No alcanza el filamento ${f.nombre}: el pedido necesita ${gramosTxt(g)} y quedan ${gramosTxt(f.gramos)}`);
-        renderPedidosNegocioTable();
-        return;
-      }
-    }
-  }
-
+  const anterior = c.estado;
   const res = await supabase.from('carritos').update({ estado }).eq('id_carrito', id);
-  if(!okDB(res, 'No se pudo cambiar el estado')){ renderPedidosNegocioTable(); return; }
-
-  let movido = 0;
-  if(delta !== 0){
-    for(const [f, g] of porFil){
-      const r = await supabase.from('filamentos').update({ cantidad: Math.max(0, Math.round(f.gramos + delta*g)) }).eq('id_filamento', f.id);
-      if(r.error) console.error(r.error); else movido += g;
-    }
+  if(res.error){
+    console.error(res.error);
+    toast('No se pudo cambiar el estado: ' + res.error.message);   // p. ej. "No alcanza el filamento PLA · Negro..."
+    renderPedidosNegocioTable();
+    return;
   }
-
   await cargarBase(); await cargarNegocio();
   refrescarNegocio();
-  const extra = movido ? (delta < 0 ? ` · se usaron ${gramosTxt(movido)} de filamento` : ` · se devolvieron ${gramosTxt(movido)} de filamento`) : '';
+  let extra = '';
+  if(estado === 'cancelado') extra = ' · el filamento de sus productos regresó al inventario';
+  else if(anterior === 'cancelado') extra = ' · se volvió a apartar el filamento';
   toast((FINALIZADOS.includes(estado) ? `${c.label} pasó a «Finalizados»` : 'Estado actualizado') + extra);
 }
 
