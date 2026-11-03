@@ -4,9 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Estudio 3D</title>
+<!-- Aplica el modo guardado antes de pintar la página (evita el parpadeo) -->
+<script>try{ if(localStorage.getItem('estudio3d-tema')==='oscuro') document.documentElement.setAttribute('data-theme','oscuro'); }catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 
 <!-- Supabase con versión fija (evita que un cambio futuro rompa la página) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
@@ -25,6 +27,10 @@
       <a href="#como-funciona">Cómo funciona</a>
     </div>
     <div class="navcta">
+      <button type="button" class="theme-btn" onclick="alternarTema()" aria-pressed="false" aria-label="Cambiar a modo oscuro" title="Modo oscuro">
+        <svg class="ico ico-luna" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+        <svg class="ico ico-sol" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </button>
       <button class="btn btn-primary" onclick="enterApp()">Entrar</button>
     </div>
   </nav>
@@ -41,25 +47,25 @@
       <svg id="printerSvg" viewBox="0 0 640 340" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id="metalGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#3a463d"/><stop offset="45%" stop-color="#232b23"/><stop offset="100%" stop-color="#12160f"/>
+            <stop offset="0%" stop-color="#4a4a4f"/><stop offset="45%" stop-color="#2a2a2e"/><stop offset="100%" stop-color="#161616"/>
           </linearGradient>
           <linearGradient id="metalGradH" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stop-color="#12160f"/><stop offset="50%" stop-color="#3f4c40"/><stop offset="100%" stop-color="#12160f"/>
+            <stop offset="0%" stop-color="#161616"/><stop offset="50%" stop-color="#4a4a4f"/><stop offset="100%" stop-color="#161616"/>
           </linearGradient>
           <linearGradient id="objGrad" x1="0" y1="1" x2="1" y2="0">
-            <stop offset="0%" stop-color="#0e3322"/><stop offset="55%" stop-color="#1f8f57"/><stop offset="100%" stop-color="#8fe3b4"/>
+            <stop offset="0%" stop-color="#1F9E57"/><stop offset="55%" stop-color="#2BD96B"/><stop offset="100%" stop-color="#BFF5D3"/>
           </linearGradient>
           <radialGradient id="backGlow" cx="50%" cy="12%" r="75%">
-            <stop offset="0%" stop-color="#1c3324" stop-opacity="0.9"/><stop offset="100%" stop-color="#0a0c0a" stop-opacity="0"/>
+            <stop offset="0%" stop-color="#FFC21A" stop-opacity="0.18"/><stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
           </radialGradient>
           <radialGradient id="bedGlow" cx="50%" cy="0%" r="80%">
-            <stop offset="0%" stop-color="#2fae6b" stop-opacity="0.35"/><stop offset="100%" stop-color="#2fae6b" stop-opacity="0"/>
+            <stop offset="0%" stop-color="#2BD96B" stop-opacity="0.35"/><stop offset="100%" stop-color="#2BD96B" stop-opacity="0"/>
           </radialGradient>
           <pattern id="gridPattern" width="24" height="24" patternUnits="userSpaceOnUse">
-            <path d="M24 0H0V24" fill="none" stroke="#161c15" stroke-width="1"/>
+            <path d="M24 0H0V24" fill="none" stroke="#E2E2DD" stroke-width="1"/>
           </pattern>
           <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
-            <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#000" flood-opacity="0.5"/>
+            <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#161616" flood-opacity="0.25"/>
           </filter>
           <clipPath id="objClip"><rect id="objClipRect" x="240" y="280" width="160" height="0"/></clipPath>
         </defs>
@@ -71,23 +77,23 @@
         <rect x="481" y="30" width="9" height="262" rx="3" fill="url(#metalGrad)" filter="url(#softShadow)"/>
         <rect x="150" y="22" width="340" height="12" rx="4" fill="url(#metalGradH)"/>
         <g transform="translate(465,54)">
-          <circle r="20" fill="#171d16" stroke="#3a463d" stroke-width="2"/>
-          <circle r="7" fill="#0a0c0a" stroke="#3a463d" stroke-width="2"/>
-          <path d="M -18,-4 A18,18 0 0,1 -4,-18" stroke="#2fae6b" stroke-width="3" fill="none" opacity="0.85"/>
-          <path d="M 4,-18 A18,18 0 0,1 18,-4" stroke="#2fae6b" stroke-width="3" fill="none" opacity="0.5"/>
+          <circle r="20" fill="#161616" stroke="#161616" stroke-width="2"/>
+          <circle r="7" fill="#F6F6F4" stroke="#161616" stroke-width="2"/>
+          <path d="M -18,-4 A18,18 0 0,1 -4,-18" stroke="#FFC21A" stroke-width="3" fill="none" opacity="1"/>
+          <path d="M 4,-18 A18,18 0 0,1 18,-4" stroke="#FFC21A" stroke-width="3" fill="none" opacity="0.6"/>
         </g>
         <rect x="186" y="280" width="268" height="12" rx="4" fill="url(#metalGrad)" filter="url(#softShadow)"/>
-        <rect x="192" y="284" width="256" height="4" rx="2" fill="#2fae6b" opacity="0.4"/>
+        <rect x="192" y="284" width="256" height="4" rx="2" fill="#2BD96B" opacity="0.8"/>
         <ellipse cx="320" cy="298" rx="170" ry="16" fill="url(#bedGlow)"/>
-        <polygon id="objShape" clip-path="url(#objClip)" fill="url(#objGrad)" stroke="#062015" stroke-width="1.5" points=""/>
-        <polygon id="objShine" clip-path="url(#objClip)" points="302,278 310,90 320,90 314,278" fill="#eafff2" opacity="0.18"/>
+        <polygon id="objShape" clip-path="url(#objClip)" fill="url(#objGrad)" stroke="#161616" stroke-width="2" points=""/>
+        <polygon id="objShine" clip-path="url(#objClip)" points="302,278 310,90 320,90 314,278" fill="#FFFFFF" opacity="0.35"/>
         <g id="gantryGroup">
           <rect x="150" y="-4" width="340" height="8" rx="3" fill="url(#metalGradH)" filter="url(#softShadow)"/>
           <g id="printHead">
             <rect x="-17" y="-12" width="34" height="18" rx="4" fill="url(#metalGrad)"/>
-            <rect x="-17" y="-12" width="34" height="5" rx="2" fill="#4a5a4c" opacity="0.6"/>
-            <circle cx="0" cy="-3" r="2" fill="#7fe3a8"/>
-            <polygon class="nozzle-tip" points="-6,6 6,6 0,20" fill="#2fae6b"/>
+            <rect x="-17" y="-12" width="34" height="5" rx="2" fill="#FFC21A" opacity="1"/>
+            <circle cx="0" cy="-3" r="2" fill="#2BD96B"/>
+            <polygon class="nozzle-tip" points="-6,6 6,6 0,20" fill="#FF7A1A"/>
           </g>
         </g>
       </svg>
@@ -396,13 +402,23 @@
       <div class="kpi-row" id="kpiRow"></div>
       <div class="grid2">
         <div class="panel">
-          <div class="phead"><div><h3>Ventas mensuales</h3><span class="sub">Últimos 6 meses · Quetzales</span></div></div>
-          <svg id="lineChart" viewBox="0 0 560 200" style="width:100%; height:auto;"></svg>
+          <div class="phead phead-ventas"><div><h3>Ventas</h3><span class="sub" id="ventasSub">Últimos 6 meses · Quetzales</span></div>
+            <div class="seg" role="group" aria-label="Periodo de la gráfica">
+              <button type="button" class="seg-btn" data-periodo="diario" aria-pressed="false" onclick="cambiarPeriodoVentas('diario')">Diario</button>
+              <button type="button" class="seg-btn" data-periodo="semanal" aria-pressed="false" onclick="cambiarPeriodoVentas('semanal')">Semanal</button>
+              <button type="button" class="seg-btn active" data-periodo="mensual" aria-pressed="true" onclick="cambiarPeriodoVentas('mensual')">Mensual</button>
+              <button type="button" class="seg-btn" data-periodo="anual" aria-pressed="false" onclick="cambiarPeriodoVentas('anual')">Anual</button>
+            </div>
+          </div>
+          <div class="chart-wrap" id="lineWrap">
+            <svg id="lineChart" viewBox="0 0 560 200" style="width:100%; height:auto;"></svg>
+            <div class="chart-tip" id="lineTip" hidden></div>
+          </div>
         </div>
         <div class="panel">
           <div class="phead"><div><h3>Carritos por estado</h3><span class="sub">Todos los pedidos</span></div></div>
-          <div style="display:flex; align-items:center; gap:16px;">
-            <svg id="donutChart" viewBox="0 0 180 180" style="width:120px; height:120px; flex-shrink:0;"></svg>
+          <div class="donut-wrap">
+            <svg id="donutChart" class="donut-svg" viewBox="0 0 200 200"></svg>
             <div class="legend" id="donutLegend"></div>
           </div>
         </div>
@@ -518,9 +534,9 @@
 
 <!-- ================= LOGIN / REGISTRO (oculto hasta que se necesite) ================= -->
 <div id="login-modal" role="dialog" aria-modal="true" aria-labelledby="modal-titulo"
-    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:100; align-items:center; justify-content:center; padding:16px; overflow-y:auto;">
+    style="display:none; position:fixed; inset:0; background:rgba(22,22,22,0.55); z-index:100; align-items:center; justify-content:center; padding:16px; overflow-y:auto;">
   <div class="panel" style="width:100%; max-width:340px;">
-    <h2 id="modal-titulo" style="font-family:var(--display); margin-bottom:15px;">Iniciar Sesión</h2>
+    <h2 id="modal-titulo" style="font-family:var(--display); font-weight:800; text-transform:uppercase; letter-spacing:-0.5px; margin-bottom:15px;">Iniciar Sesión</h2>
 
     <div class="field" style="margin-bottom:10px;">
       <label for="login-email">Correo</label>
@@ -544,7 +560,7 @@
     </div>
 
 
-    <button type="button" class="btn btn-ghost" style="width:100%; color:#888;" onclick="cerrarLogin()">Cancelar</button>
+    <button type="button" class="btn btn-ghost" style="width:100%; color:#555555;" onclick="cerrarLogin()">Cancelar</button>
   </div>
 </div>
 

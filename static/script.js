@@ -308,7 +308,7 @@ async function registrarse() {
     objShape.style.opacity = fadeIn;
     gantry.setAttribute('transform', 'translate(0,' + (bedY - currentHeight - 14) + ')');
     const headX = Math.sin(t * 6 * Math.PI * 2) * halfWidths;
-    if(head) head.setAttribute('transform', 'translate(' + headX + ',0)');
+    if(head) head.setAttribute('transform', 'translate(' + (centerX + headX) + ',0)');
     const pct = Math.floor(t*100);
     if(printPct) printPct.textContent = pct + '%';
     if(printBar) printBar.style.width = pct + '%';
@@ -1903,33 +1903,141 @@ function renderKPIs(){
   `).join('');
 }
 
+/* ---- Gráfica de ventas: diario / semanal / mensual / anual + valor al pasar el cursor ---- */
+let periodoVentas = 'mensual';
+let lineaActual = null;
+const PERIODOS_VENTAS = {
+  diario:  { n:14, sub:'Últimos 14 días · Quetzales' },
+  semanal: { n:8,  sub:'Últimas 8 semanas · Quetzales' },
+  mensual: { n:6,  sub:'Últimos 6 meses · Quetzales' },
+  anual:   { n:5,  sub:'Últimos 5 años · Quetzales' },
+};
+
+function calcularVentas(periodo){
+  const ahora = new Date(), n = PERIODOS_VENTAS[periodo].n, slots = [];
+  for(let i=n-1;i>=0;i--){
+    let ini, fin, mes, largo;
+    if(periodo==='diario'){
+      ini = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate()-i);
+      fin = new Date(ini.getFullYear(), ini.getMonth(), ini.getDate()+1);
+      mes = ini.getDate() + '/' + (ini.getMonth()+1);
+      largo = ini.getDate() + ' ' + MESES[ini.getMonth()] + ' ' + ini.getFullYear();
+    } else if(periodo==='semanal'){
+      const lunes = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() - ((ahora.getDay()+6)%7));
+      ini = new Date(lunes.getFullYear(), lunes.getMonth(), lunes.getDate() - 7*i);
+      fin = new Date(ini.getFullYear(), ini.getMonth(), ini.getDate()+7);
+      mes = ini.getDate() + '/' + (ini.getMonth()+1);
+      largo = 'Semana del ' + ini.getDate() + ' ' + MESES[ini.getMonth()] + ' ' + ini.getFullYear();
+    } else if(periodo==='anual'){
+      ini = new Date(ahora.getFullYear()-i, 0, 1);
+      fin = new Date(ahora.getFullYear()-i+1, 0, 1);
+      mes = String(ini.getFullYear());
+      largo = 'Año ' + ini.getFullYear();
+    } else {
+      ini = new Date(ahora.getFullYear(), ahora.getMonth()-i, 1);
+      fin = new Date(ahora.getFullYear(), ahora.getMonth()-i+1, 1);
+      mes = MESES[ini.getMonth()];
+      largo = MESES[ini.getMonth()] + ' ' + ini.getFullYear();
+    }
+    slots.push({ ini:ini.getTime(), fin:fin.getTime(), mes, largo, valor:0 });
+  }
+  state.carritosNegocio.filter(c=>c.estado==='entregado').forEach(c=>{
+    const slot = slots.find(x=>c.ts>=x.ini && c.ts<x.fin);
+    if(slot) slot.valor += c.total;
+  });
+  return slots;
+}
+
+function cambiarPeriodoVentas(periodo){
+  if(!PERIODOS_VENTAS[periodo]) return;
+  periodoVentas = periodo;
+  document.querySelectorAll('.seg-btn[data-periodo]').forEach(b=>{
+    const on = b.dataset.periodo === periodo;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  drawLine();
+}
+
 function drawLine(){
   const svg = document.getElementById('lineChart');
   if(!svg) return;
-  const data = calcularVentasMensuales();
+  const sub = document.getElementById('ventasSub');
+  if(sub) sub.textContent = PERIODOS_VENTAS[periodoVentas].sub;
+  ocultarTipVentas();
+  const data = calcularVentas(periodoVentas);
   if(!data.some(v=>v.valor>0)){
-    svg.innerHTML = `<text x="280" y="105" text-anchor="middle" class="axis-label">Aún no hay ventas registradas</text>`;
+    lineaActual = null;
+    svg.innerHTML = `<text x="280" y="105" text-anchor="middle" class="axis-label">Aún no hay ventas en este periodo</text>`;
     return;
   }
-  const W=560, H=200, padL=40, padR=10, padT=10, padB=26;
+  const W=560, H=200, padL=40, padR=14, padT=12, padB=26;
   const max = Math.max(...data.map(v=>v.valor)) * 1.15;
   const stepX = (W-padL-padR)/(data.length-1);
   const yFor = v => padT + (1 - v/max)*(H-padT-padB);
   const xFor = i => padL + i*stepX;
+  const cadaCuanto = data.length > 8 ? 2 : 1;
   let html = '';
   for(let i=0;i<=3;i++){
     const v = max/3*i, y = yFor(v);
     html += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" class="grid-line"/>`;
     html += `<text x="4" y="${y+4}" class="axis-label">Q${Math.round(v)}</text>`;
   }
-  data.forEach((v,i)=>{ html += `<text x="${xFor(i)}" y="${H-6}" class="axis-label" text-anchor="middle">${v.mes}</text>`; });
+  data.forEach((v,i)=>{
+    if((data.length-1-i) % cadaCuanto === 0) html += `<text x="${xFor(i)}" y="${H-6}" class="axis-label" text-anchor="middle">${v.mes}</text>`;
+  });
   const linePts = data.map((v,i)=>`${xFor(i)},${yFor(v.valor)}`).join(' ');
   const areaPts = `${padL},${yFor(0)} ${linePts} ${xFor(data.length-1)},${yFor(0)}`;
   html += `<defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2BD96B" stop-opacity="0.45"/><stop offset="100%" stop-color="#2BD96B" stop-opacity="0"/></linearGradient></defs>
     <polygon points="${areaPts}" fill="url(#areaGrad)"/>
-    <polyline points="${linePts}" fill="none" stroke="#161616" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
-  data.forEach((v,i)=>{ html += `<circle cx="${xFor(i)}" cy="${yFor(v.valor)}" r="4.5" fill="#2BD96B" stroke="#161616" stroke-width="2"/>`; });
+    <polyline points="${linePts}" fill="none" style="stroke:var(--text)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+  data.forEach((v,i)=>{ html += `<circle cx="${xFor(i)}" cy="${yFor(v.valor)}" r="4.5" fill="#2BD96B" style="stroke:var(--text)" stroke-width="2"/>`; });
+  html += `<g id="lineHover" style="display:none; pointer-events:none;">
+      <line id="lineHoverBar" x1="0" y1="${padT}" x2="0" y2="${yFor(0)}" style="stroke:var(--text)" stroke-width="1.5" stroke-dasharray="4 4"/>
+      <circle id="lineHoverDot" cx="0" cy="0" r="7" fill="#FFC21A" style="stroke:var(--text)" stroke-width="2.5"/>
+    </g>
+    <rect x="${padL-stepX/2}" y="0" width="${W-padL-padR+stepX}" height="${H}" fill="transparent" style="cursor:crosshair;"/>`;
   svg.innerHTML = html;
+  lineaActual = { data, xFor, yFor, stepX, padL, W, H };
+  if(!svg.dataset.hover){
+    svg.dataset.hover = '1';
+    svg.addEventListener('pointermove', moverTipVentas);
+    svg.addEventListener('pointerdown', moverTipVentas);
+    svg.addEventListener('pointerleave', ocultarTipVentas);
+  }
+}
+
+function moverTipVentas(e){
+  const svg = document.getElementById('lineChart');
+  const tip = document.getElementById('lineTip');
+  if(!lineaActual || !svg || !tip) return;
+  const { data, xFor, yFor, stepX, padL, W, H } = lineaActual;
+  const r = svg.getBoundingClientRect();
+  const x = (e.clientX - r.left) * W / r.width;
+  const i = Math.max(0, Math.min(data.length-1, Math.round((x - padL) / stepX)));
+  const px = xFor(i), py = yFor(data[i].valor);
+  const g = document.getElementById('lineHover');
+  if(g){
+    g.style.display = '';
+    document.getElementById('lineHoverBar').setAttribute('x1', px);
+    document.getElementById('lineHoverBar').setAttribute('x2', px);
+    document.getElementById('lineHoverDot').setAttribute('cx', px);
+    document.getElementById('lineHoverDot').setAttribute('cy', py);
+  }
+  tip.innerHTML = `<b>${Q(data[i].valor)}</b><span>${esc(data[i].largo)}</span>`;
+  tip.hidden = false;
+  const left = px * r.width / W, top = py * r.height / H;
+  tip.style.left = left + 'px';
+  tip.style.top = top + 'px';
+  tip.classList.toggle('tip-izq', left > r.width - 90);
+  tip.classList.toggle('tip-der', left < 90);
+}
+
+function ocultarTipVentas(){
+  const tip = document.getElementById('lineTip');
+  if(tip) tip.hidden = true;
+  const g = document.getElementById('lineHover');
+  if(g) g.style.display = 'none';
 }
 
 function drawDonut(){
@@ -1944,24 +2052,32 @@ function drawDonut(){
     {estado:'Cancelado', valor:counts.cancelado, color:'#FF4F9A'},
   ];
   const total = segs.reduce((a,s)=>a+s.valor,0);
-  const cx=90, cy=90, r=64, strokeW=22;
+  const cx=100, cy=100, r=74, strokeW=30;
   const circumference = 2*Math.PI*r;
+  const conValor = segs.filter(x=>x.valor>0).length;
+  const hueco = conValor > 1 ? 3 : 0;   // pequeña separación entre segmentos
   let offsetAcc = 0;
-  let html = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#EFEFEB" stroke-width="${strokeW}"/>`;
+  let html = `<circle cx="${cx}" cy="${cy}" r="${r + strokeW/2 + 2}" style="fill:none; stroke:var(--stroke)" stroke-width="2.5"/>
+    <circle cx="${cx}" cy="${cy}" r="${r - strokeW/2 - 2}" style="fill:var(--bg-raised); stroke:var(--stroke)" stroke-width="2.5"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" style="stroke:var(--bg-inset)" stroke-width="${strokeW}"/>`;
   if(total > 0){
     segs.forEach(seg=>{
+      if(!seg.valor) return;
       const len = (seg.valor/total)*circumference;
-      html += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${seg.color}" stroke-width="${strokeW}" stroke-dasharray="${len} ${circumference-len}" stroke-dashoffset="${-offsetAcc}" transform="rotate(-90 ${cx} ${cy})" stroke-linecap="butt"/>`;
+      const visible = Math.max(0, len - hueco);
+      html += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${seg.color}" stroke-width="${strokeW}" stroke-dasharray="${visible} ${circumference-visible}" stroke-dashoffset="${-offsetAcc}" transform="rotate(-90 ${cx} ${cy})" stroke-linecap="butt"/>`;
       offsetAcc += len;
     });
   }
-  html += `<text x="${cx}" y="${cy-4}" text-anchor="middle" font-family="Outfit" font-size="26" font-weight="800" fill="#161616">${total}</text>`;
-  html += `<text x="${cx}" y="${cy+14}" text-anchor="middle" font-family="Outfit" font-size="11" font-weight="600" fill="#555555">carritos</text>`;
+  html += `<text x="${cx}" y="${cy+8}" text-anchor="middle" font-family="Outfit, sans-serif" font-size="44" font-weight="800" style="fill:var(--text)">${total}</text>`;
+  html += `<text x="${cx}" y="${cy+30}" text-anchor="middle" font-family="Outfit, sans-serif" font-size="13" font-weight="700" letter-spacing="1" style="fill:var(--text-dim)">CARRITOS</text>`;
   svg.innerHTML = html;
   const legend = document.getElementById('donutLegend');
-  if(legend) legend.innerHTML = segs.map(s=>`
-    <div class="legend-item"><span class="left"><span class="legend-dot" style="background:${s.color}"></span>${s.estado}</span><span class="val">${s.valor}</span></div>
-  `).join('');
+  if(legend) legend.innerHTML = segs.map(s=>{
+    const pct = total ? Math.round(s.valor/total*100) : 0;
+    return `
+    <div class="legend-item"><span class="left"><span class="legend-dot" style="background:${s.color}"></span>${s.estado}</span><span class="val">${s.valor}<small>${pct}%</small></span></div>`;
+  }).join('');
 }
 
 function drawTopProductos(){
@@ -2023,3 +2139,22 @@ function renderPedidosNegocioTable(){
     </select></td><td>${c.fecha}</td></tr>
   `).join('');
 }
+
+/* ===================== MODO OSCURO ===================== */
+function aplicarTema(tema){
+  const oscuro = tema === 'oscuro';
+  document.documentElement.setAttribute('data-theme', oscuro ? 'oscuro' : 'claro');
+  document.querySelectorAll('.theme-btn').forEach(b=>{
+    b.setAttribute('aria-pressed', oscuro ? 'true' : 'false');
+    b.setAttribute('aria-label', oscuro ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro');
+    b.title = oscuro ? 'Modo claro' : 'Modo oscuro';
+  });
+}
+function alternarTema(){
+  const nuevo = document.documentElement.getAttribute('data-theme') === 'oscuro' ? 'claro' : 'oscuro';
+  try { localStorage.setItem('estudio3d-tema', nuevo); } catch(e) {}
+  aplicarTema(nuevo);
+}
+document.addEventListener('DOMContentLoaded', () => {
+  aplicarTema(document.documentElement.getAttribute('data-theme') === 'oscuro' ? 'oscuro' : 'claro');
+});
