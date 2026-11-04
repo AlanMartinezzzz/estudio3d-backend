@@ -339,11 +339,17 @@ async function cargarBase(){
   state.colores    = (cols.data||[]).map(c=>({ id:c.id, nombre:c.nombre }));
   state.productos  = (prods.data||[]).map(p=>({
     id:p.id_producto, nombre:p.nombre, desc:p.descripcion||'', precio:Number(p.precio)||0,
+    imagenes: (Array.isArray(p.imagenes) && p.imagenes.length ? p.imagenes : (p.imagen_url ? [p.imagen_url] : [])).filter(Boolean),
     imagen:p.imagen_url||'', peso:Number(p.peso_gramos)||0, material:p.material||'', color:p.color||'',
     existencias:0, existenciaGuardada:Number(p.existencia)||0
   }));
   // Las existencias ya no se escriben a mano: salen de los gramos de filamento
-  state.productos.forEach(p => { p.existencias = piezasPosibles(p); });
+  state.productos.forEach(p => {
+    if(!p.imagen && p.imagenes.length) p.imagen = p.imagenes[0];
+    // Total de piezas que alcanzan sumando todos los colores disponibles del material
+    const cols = coloresProducto(p);
+    p.existencias = cols.length ? cols.reduce((a,c)=>a + c.piezas, 0) : piezasPosibles(p);
+  });
 }
 
 /* ---- Productos hechos con filamento: cuántas piezas alcanzan ---- */
@@ -357,6 +363,44 @@ function piezasPosibles(p, gramosApartados){
   if(!f || !(p.peso > 0)) return 0;
   return Math.max(0, Math.floor((f.gramos - (gramosApartados||0)) / p.peso));
 }
+// Colores en que se puede pedir un producto: los filamentos del mismo material con gramos.
+// Si la cuenta no puede ver filamentos, solo el color con el que se registró.
+function coloresProducto(p){
+  if(!p || !(p.peso > 0) || !p.material) return [];
+  if(!state.filamentosVisibles){
+    return p.color ? [{ color:p.color, piezas:Math.max(0, p.existenciaGuardada), fil:null }] : [];
+  }
+  const lista = state.filamentosTodos.filter(f => mismoTexto(f.material, p.material))
+    .map(f => ({ color:f.color, piezas:Math.floor(f.gramos / p.peso), fil:f }));
+  // el color con el que se registró el producto va primero
+  lista.sort((a,b) => (mismoTexto(b.color, p.color) - mismoTexto(a.color, p.color)) || a.color.localeCompare(b.color));
+  return lista;
+}
+// Cuántas piezas MÁS de este producto y color caben, contando lo que ya está en el carrito
+function maxAgregable(p, color){
+  const f = filamentoPara(state.filamentosTodos, p.material, color);
+  if(!f){
+    if(state.filamentosVisibles) return 0;
+    const yaEnCarrito = state.carrito.filter(l=>l.tipo==='producto' && l.ref===p.id).reduce((a,l)=>a+l.cantidad,0);
+    return Math.max(0, p.existenciaGuardada - yaEnCarrito);
+  }
+  const usados = state.carrito.filter(l=>l.tipo==='producto').reduce((a,l)=>{
+    const q = state.productos.find(x=>x.id===l.ref);
+    return a + (q && filamentoPara(state.filamentosTodos, q.material, l.color || q.color) === f ? q.peso * l.cantidad : 0);
+  }, 0);
+  return Math.max(0, Math.floor((f.gramos - usados) / p.peso));
+}
+const COLORES_CSS = { negro:'#161616', blanco:'#FFFFFF', gris:'#9A9A9A', plata:'#C7C7C7', plateado:'#C7C7C7', rojo:'#E53935', azul:'#2F6BFF',
+  celeste:'#6EC6FF', verde:'#2BD96B', amarillo:'#FFD60A', naranja:'#FF7A1A', anaranjado:'#FF7A1A', rosa:'#FF4F9A', rosado:'#FF4F9A',
+  morado:'#7E4BD6', violeta:'#7E4BD6', lila:'#B79CED', cafe:'#7A4B2A', 'café':'#7A4B2A', marron:'#7A4B2A', 'marrón':'#7A4B2A',
+  dorado:'#D4AF37', oro:'#D4AF37', beige:'#E8D9B5', crema:'#F3E9D2', turquesa:'#1CC8B6', transparente:'transparent' };
+function colorCSS(nombre){
+  const n = String(nombre||'').trim().toLowerCase();
+  if(COLORES_CSS[n]) return COLORES_CSS[n];
+  const k = Object.keys(COLORES_CSS).find(x => n.includes(x));
+  return k ? COLORES_CSS[k] : '#BDBDBD';
+}
+
 // Gramos que ya ocupan en el carrito otros productos del mismo filamento
 function gramosEnCarrito(p, excluirId){
   const f = filamentoDeProducto(p);
@@ -1486,32 +1530,78 @@ function renderCatalogo(){
   const lista = q ? state.productos.filter(p => ((p.nombre||'') + ' ' + (p.desc||'')).toLowerCase().includes(q)) : state.productos;
   const aviso = q ? `<div class="small-note" style="grid-column:1/-1;margin:0 0 4px;">${lista.length} resultado(s) para «${esc(q)}» · <a href="#" onclick="limpiarBusqueda();return false;" style="color:var(--green-ink);font-weight:700;text-decoration:underline;">Ver todo</a></div>` : '';
   if(q && !lista.length){ grid.innerHTML = aviso + `<div class="empty" style="grid-column:1/-1;">No encontramos productos con ese nombre.</div>`; return; }
-  grid.innerHTML = aviso + lista.map(p => `
-    <div class="prod-card"><div class="prod-img">${p.imagen ? `<img src="${esc(p.imagen)}" alt="${esc(p.nombre)}" loading="lazy">` : '<span class="prod-img-vacia" aria-hidden="true"></span>'}</div><h4>${esc(p.nombre)}</h4><p>${esc(p.desc)}</p><div class="price">${Q(p.precio)}</div>
-    <p class="small-note">${p.existencias > 0 ? p.existencias + ' disponibles' + (p.material ? ' · ' + esc(p.material) + ' ' + esc(p.color) : '') : ''}</p>
-    ${p.existencias > 0
-      ? `<button class="btn btn-sm btn-primary" onclick="agregarProductoAlCarrito(${p.id})">Agregar al carrito</button>`
-      : `<span class="small-note">Agotado</span>`}</div>
-  `).join('');
+  grid.innerHTML = aviso + lista.map(p => {
+    const cols = coloresProducto(p).filter(c => c.piezas > 0);
+    const color = cols.length ? cols[0].color : '';
+    const max = color ? maxAgregable(p, color) : 0;
+    const nFotos = p.imagenes.length;
+    return `
+    <div class="prod-card">
+      <button type="button" class="prod-img prod-abrir" onclick="abrirProducto(${p.id})" aria-label="Ver ${esc(p.nombre)} en grande">
+        ${p.imagen ? `<img src="${esc(p.imagen)}" alt="${esc(p.nombre)}" loading="lazy">` : '<span class="prod-img-vacia" aria-hidden="true"></span>'}
+        ${nFotos > 1 ? `<span class="prod-nfotos">${nFotos} fotos</span>` : ''}
+      </button>
+      <h4><button type="button" class="prod-titulo" onclick="abrirProducto(${p.id})">${esc(p.nombre)}</button></h4>
+      <p>${esc(p.desc)}</p>
+      <div class="price">${Q(p.precio)}</div>
+      ${cols.length ? `<div class="color-dots" aria-label="Colores disponibles">${cols.slice(0,6).map(c=>`<span class="color-dot" style="background:${colorCSS(c.color)}" title="${esc(c.color)}"></span>`).join('')}${cols.length>6?`<span class="small-note">+${cols.length-6}</span>`:''}</div>` : ''}
+      <p class="small-note">${p.existencias > 0 ? p.existencias + ' disponibles' + (cols.length > 1 ? ' · ' + cols.length + ' colores' : (color ? ' · ' + esc(p.material) + ' ' + esc(color) : '')) : 'Agotado'}</p>
+      ${max > 0 ? `
+      <div class="prod-acciones">
+        <div class="stepper" data-stepper>
+          <button type="button" class="step-btn" onclick="pasoCantidad(this,-1)" aria-label="Menos">−</button>
+          <input type="number" class="step-num" id="cant-${p.id}" value="1" min="1" max="${max}" inputmode="numeric" aria-label="Cantidad de ${esc(p.nombre)}" onchange="limitarCantidad(this)">
+          <button type="button" class="step-btn" onclick="pasoCantidad(this,1)" aria-label="Más">+</button>
+        </div>
+        <button class="btn btn-sm btn-primary" onclick="agregarProductoAlCarrito(${p.id}, document.getElementById('cant-${p.id}').value, '${esc(color).replace(/'/g,"&#39;")}')">Agregar</button>
+      </div>` : `<button type="button" class="btn btn-sm" onclick="abrirProducto(${p.id})">${p.existencias > 0 ? 'Ver colores' : 'Ver producto'}</button>`}
+    </div>`;
+  }).join('');
 }
 
-function agregarProductoAlCarrito(id){
+// Botones − / + del selector de cantidad
+function pasoCantidad(btn, d){
+  const input = btn.parentElement.querySelector('input');
+  if(!input) return;
+  input.value = (parseInt(input.value) || 1) + d;
+  limitarCantidad(input);
+}
+function limitarCantidad(input){
+  const max = parseInt(input.max) || 1;
+  let v = parseInt(input.value) || 1;
+  if(v < 1) v = 1;
+  if(v > max){ v = max; toast(`Solo hay ${max} disponible(s)`); }
+  input.value = v;
+  if(input.id === 'pm-cant') actualizarTotalModal();
+}
+
+function agregarProductoAlCarrito(id, cantidad, color){
   const p = state.productos.find(x=>x.id===id);
-  if(!p) return;
-  const existente = state.carrito.find(l=>l.tipo==='producto' && l.ref===id);
-  const enCarrito = existente ? existente.cantidad : 0;
-  const maximo = piezasPosibles(p, gramosEnCarrito(p, id));
-  if(enCarrito + 1 > maximo){ toast(maximo ? `Solo alcanza el filamento para ${maximo} pieza(s) de este producto` : 'Este producto está agotado por ahora'); return; }
-  if(existente){ existente.cantidad++; } else { state.carrito.push({ tipo:'producto', ref:id, nombre:p.nombre, precio:p.precio, cantidad:1 }); }
+  if(!p) return false;
+  const n = Math.max(1, parseInt(cantidad) || 1);
+  if(!color){
+    const cols = coloresProducto(p).filter(c=>c.piezas>0);
+    color = cols.length ? cols[0].color : p.color;
+  }
+  const maximo = maxAgregable(p, color);
+  if(n > maximo){
+    toast(maximo ? `Solo puedes agregar ${maximo} más de ${p.nombre} en ${color}` : `${p.nombre} en ${color} está agotado por ahora`);
+    return false;
+  }
+  const existente = state.carrito.find(l=>l.tipo==='producto' && l.ref===id && mismoTexto(l.color, color));
+  if(existente){ existente.cantidad += n; }
+  else { state.carrito.push({ tipo:'producto', ref:id, nombre:p.nombre + (color ? ` · ${color}` : ''), precio:p.precio, cantidad:n, color }); }
   renderCarrito();
-  toast('Agregado al carrito');
+  renderCatalogo();
+  toast(`${n} × ${p.nombre}${color ? ' (' + color + ')' : ''} agregado al carrito`);
+  return true;
 }
 
 function guardarCarrito(){
   const id = state.perfil && state.perfil.id_user;
   if(!id || state.carritoDe !== id) return;            
   try{
-    localStorage.setItem('carrito_' + id, JSON.stringify(state.carrito.map(l => ({ tipo: l.tipo, ref: l.ref, cantidad: l.cantidad }))));
+    localStorage.setItem('carrito_' + id, JSON.stringify(state.carrito.map(l => ({ tipo: l.tipo, ref: l.ref, cantidad: l.cantidad, color: l.color || null }))));
   }catch(e){}
 }
 
@@ -1526,9 +1616,12 @@ function restaurarCarrito(){
   guardado.forEach(g => {
     if(g && g.tipo === 'producto'){
       const p = state.productos.find(x => x.id === g.ref);
-      const cant = Math.min(Math.max(1, parseInt(g.cantidad) || 1), p ? p.existencias : 0);
-      if(!p || cant < 1){ descartados++; return; }
-      lineas.push({ tipo:'producto', ref:p.id, nombre:p.nombre, precio:p.precio, cantidad:cant });
+      if(!p){ descartados++; return; }
+      const color = g.color || p.color;
+      state.carrito = lineas;   // para que maxAgregable cuente lo ya restaurado
+      const cant = Math.min(Math.max(1, parseInt(g.cantidad) || 1), maxAgregable(p, color));
+      if(cant < 1){ descartados++; return; }
+      lineas.push({ tipo:'producto', ref:p.id, nombre:p.nombre + (color ? ` · ${color}` : ''), precio:p.precio, cantidad:cant, color });
     } else if(g && g.tipo === 'archivo'){
       const a = state.archivos.find(x => x.id === g.ref);
       if(!a || a.estado !== 'aprobada'){ descartados++; return; }
@@ -1609,9 +1702,9 @@ async function _confirmarPedido(){
   for(const l of state.carrito){
     if(l.tipo === 'producto'){
       const p = state.productos.find(x=>x.id===l.ref);
-      const f = filamentoDeProducto(p);
+      const f = p ? filamentoPara(state.filamentosTodos, p.material, l.color || p.color) : null;
       if(p && !f && !state.filamentosVisibles){
-        if(p.existencias < l.cantidad){ toast(`"${l.nombre}" ya no tiene suficientes piezas disponibles`); renderCatalogo(); return; }
+        if(p.existenciaGuardada < l.cantidad){ toast(`"${l.nombre}" ya no tiene suficientes piezas disponibles`); renderCatalogo(); return; }
         continue;
       }
       if(!p || !f || !(p.peso > 0)){ toast(`"${l.nombre}" ya no está disponible`); renderCatalogo(); return; }
@@ -1643,10 +1736,15 @@ async function _confirmarPedido(){
     id_carrito: cab.data.id_carrito,
     id_archivo: l.tipo==='archivo' ? l.ref : null,
     id_producto: l.tipo==='producto' ? l.ref : null,
-    nombre: l.nombre, precio: l.precio, cantidad: l.cantidad
+    nombre: l.nombre, precio: l.precio, cantidad: l.cantidad,
+    color: l.tipo==='producto' ? (l.color || null) : null
   }));
   // Al guardar los artículos, Supabase descuenta el filamento de los productos (todo o nada)
-  const det = await supabase.from('carrito_items').insert(items);
+  let det = await supabase.from('carrito_items').insert(items);
+  if(det.error && /color/i.test(det.error.message || '')){
+    // La tabla aún no tiene la columna "color": se guarda sin ella
+    det = await supabase.from('carrito_items').insert(items.map(({color, ...resto}) => resto));
+  }
   if(det.error){
     console.error(det.error);
     await supabase.from('carritos').delete().eq('id_carrito', cab.data.id_carrito);   // no dejar un pedido vacío
@@ -1731,22 +1829,38 @@ async function borrarFotoProducto(url){
 }
 
 // Vista previa en el formulario de alta
+// Fotos elegidas en el formulario de alta (todavía no subidas)
+const MAX_FOTOS_PRODUCTO = 8;
+let fotosNuevas = [];   // [{ file, url }]
+
 function alElegirFotoNueva(e){
-  const file = e.target.files && e.target.files[0];
-  const box = document.getElementById('np-foto-box');
-  const prev = document.getElementById('np-foto-prev');
-  if(!file){ if(box) box.classList.remove('con-foto'); return; }
-  const err = validarFotoProducto(file);
-  if(err){ toast(err); e.target.value = ''; if(box) box.classList.remove('con-foto'); return; }
-  if(prev){ if(prev.dataset.url) URL.revokeObjectURL(prev.dataset.url); prev.dataset.url = URL.createObjectURL(file); prev.src = prev.dataset.url; }
-  if(box) box.classList.add('con-foto');
+  const files = Array.from(e.target.files || []);
+  e.target.value = '';
+  for(const file of files){
+    if(fotosNuevas.length >= MAX_FOTOS_PRODUCTO){ toast(`Máximo ${MAX_FOTOS_PRODUCTO} fotos por producto`); break; }
+    const err = validarFotoProducto(file);
+    if(err){ toast(`${file.name}: ${err}`); continue; }
+    fotosNuevas.push({ file, url: URL.createObjectURL(file) });
+  }
+  pintarFotosNuevas();
 }
-function quitarFotoNueva(ev){
+function quitarFotoNueva(ev, i){
   if(ev){ ev.preventDefault(); ev.stopPropagation(); }
-  const input = document.getElementById('np-foto');
-  if(input) input.value = '';
+  if(i === undefined){ fotosNuevas.forEach(f=>URL.revokeObjectURL(f.url)); fotosNuevas = []; }
+  else { const [f] = fotosNuevas.splice(i,1); if(f) URL.revokeObjectURL(f.url); }
+  pintarFotosNuevas();
+}
+function pintarFotosNuevas(){
+  const g = document.getElementById('np-fotos');
   const box = document.getElementById('np-foto-box');
-  if(box) box.classList.remove('con-foto');
+  if(box) box.classList.toggle('con-foto', fotosNuevas.length > 0);
+  if(!g) return;
+  g.innerHTML = fotosNuevas.map((f,i)=>`
+    <div class="foto-mini">
+      <img src="${f.url}" alt="Foto ${i+1}">
+      ${i===0 ? '<span class="foto-principal">Principal</span>' : ''}
+      <button type="button" class="foto-x" onclick="quitarFotoNueva(event, ${i})" aria-label="Quitar foto ${i+1}">×</button>
+    </div>`).join('');
 }
 
 async function formAgregarProducto(){
@@ -1756,24 +1870,26 @@ async function formAgregarProducto(){
   if(!nombre || isNaN(precio) || precio < 0){ toast('Completa el nombre y el precio'); return; }
   if(!fil){ toast('Elige el filamento con el que se imprime'); return; }
   if(isNaN(peso) || peso <= 0){ toast('Escribe cuántos gramos pesa una pieza'); return; }
-  const input = document.getElementById('np-foto');
-  const file = input && input.files && input.files[0];
   const btn = document.getElementById('btnAgregarProducto');
   if(btn) btn.disabled = true;
-  let foto = null;
+  const subidas = [];
   try {
-    if(file){
-      const err = validarFotoProducto(file);
-      if(err){ toast(err); return; }
-      toast('Subiendo foto...');
-      foto = await subirFotoProducto(file);
+    for(let i=0;i<fotosNuevas.length;i++){
+      toast(`Subiendo foto ${i+1} de ${fotosNuevas.length}...`);
+      subidas.push((await subirFotoProducto(fotosNuevas[i].file)).url);
     }
     const fila = { nombre, descripcion: desc || null, precio, peso_gramos: peso, material: fil.material, color: fil.color,
                    existencia: Math.floor(fil.gramos / peso) };   // referencia; lo real se calcula con el filamento
-    if(foto) fila.imagen_url = foto.url;
-    const res = await supabase.from('productos').insert(fila);
+    if(subidas.length){ fila.imagen_url = subidas[0]; fila.imagenes = subidas; }
+    let res = await supabase.from('productos').insert(fila);
+    if(res.error && /imagenes/i.test(res.error.message || '')){
+      // La tabla aún no tiene la columna "imagenes": se guarda solo la principal
+      delete fila.imagenes;
+      res = await supabase.from('productos').insert(fila);
+      if(!res.error && subidas.length > 1) toast('Se guardó solo la primera foto: falta la columna "imagenes" (corre el SQL)');
+    }
     if(!okDB(res, 'No se pudo agregar el producto')){
-      if(foto) await borrarFotoProducto(foto.url);   // no dejar fotos huérfanas
+      for(const u of subidas) await borrarFotoProducto(u);   // no dejar fotos huérfanas
       return;
     }
     limpiar('np-nombre','np-desc','np-precio','np-peso');
@@ -1782,7 +1898,8 @@ async function formAgregarProducto(){
     await cargarBase(); renderProductosNegocio();
     toast('Producto publicado en el catálogo');
   } catch(err) {
-    console.error('Error con la foto del producto:', err);
+    console.error('Error con las fotos del producto:', err);
+    for(const u of subidas) await borrarFotoProducto(u);
     toast('No se pudo subir la foto: ' + (err.message || err));
   } finally {
     if(btn) btn.disabled = false;
@@ -1827,50 +1944,87 @@ async function cambiarPesoProducto(id, valor){
   toast('Peso actualizado');
 }
 
-// Cambiar o poner foto a un producto que ya existe
+// ---- Fotos de un producto que ya existe (ventana "Fotos del producto") ----
 let productoFotoId = null;
-function elegirFotoProducto(id){
+function elegirFotoProducto(id){   // se abre el gestor de fotos
   productoFotoId = id;
-  const i = document.getElementById('np-foto-cambiar');
-  if(i){ i.value = ''; i.click(); }
+  const back = document.getElementById('fotos-modal');
+  if(!back) return;
+  back.hidden = false;
+  document.body.classList.add('sin-scroll');
+  pintarGestorFotos();
+}
+function cerrarGestorFotos(){
+  const back = document.getElementById('fotos-modal');
+  if(back) back.hidden = true;
+  document.body.classList.remove('sin-scroll');
+  productoFotoId = null;
+}
+function pintarGestorFotos(){
+  const p = state.productos.find(x=>x.id===productoFotoId);
+  if(!p) return cerrarGestorFotos();
+  document.getElementById('fm-titulo').textContent = 'Fotos de ' + p.nombre;
+  const g = document.getElementById('fm-grid');
+  g.innerHTML = p.imagenes.length ? p.imagenes.map((u,i)=>`
+    <div class="foto-mini grande">
+      <img src="${esc(u)}" alt="Foto ${i+1} de ${esc(p.nombre)}">
+      ${i===0 ? '<span class="foto-principal">Principal</span>' : `<button type="button" class="btn btn-sm foto-hacer" onclick="hacerPrincipal(${i})">Hacer principal</button>`}
+      <button type="button" class="foto-x" onclick="quitarFotoExistente(${i})" aria-label="Quitar foto ${i+1}">×</button>
+    </div>`).join('') : '<div class="empty" style="grid-column:1/-1;">Este producto aún no tiene fotos.</div>';
+  const n = document.getElementById('fm-n');
+  if(n) n.textContent = `${p.imagenes.length} de ${MAX_FOTOS_PRODUCTO} fotos · la primera es la que sale en el catálogo`;
+}
+async function guardarFotosProducto(p, lista){
+  const fila = { imagenes: lista, imagen_url: lista[0] || null };
+  let res = await supabase.from('productos').update(fila).eq('id_producto', p.id);
+  if(res.error && /imagenes/i.test(res.error.message || '')){
+    toast('Falta la columna "imagenes" en productos. Corre el SQL 04_productos.sql.');
+    return false;
+  }
+  return okDB(res, 'No se pudieron guardar las fotos');
 }
 async function alCambiarFotoProducto(e){
-  const file = e.target.files && e.target.files[0];
-  const id = productoFotoId; productoFotoId = null;
-  if(!file || !id) return;
-  const err = validarFotoProducto(file);
-  if(err){ toast(err); return; }
-  const p = state.productos.find(x=>x.id===id);
+  const files = Array.from(e.target.files || []);
+  e.target.value = '';
+  const p = state.productos.find(x=>x.id===productoFotoId);
+  if(!p || !files.length) return;
+  const libres = MAX_FOTOS_PRODUCTO - p.imagenes.length;
+  if(libres <= 0){ toast(`Máximo ${MAX_FOTOS_PRODUCTO} fotos por producto`); return; }
+  const nuevas = [];
   try {
-    toast('Subiendo foto...');
-    const foto = await subirFotoProducto(file);
-    const res = await supabase.from('productos').update({ imagen_url: foto.url }).eq('id_producto', id);
-    if(!okDB(res, 'No se pudo guardar la foto')){ await borrarFotoProducto(foto.url); return; }
-    if(p && p.imagen) await borrarFotoProducto(p.imagen);
-    await cargarBase(); renderProductosNegocio();
-    toast('Foto actualizada');
+    for(const file of files.slice(0, libres)){
+      const err = validarFotoProducto(file);
+      if(err){ toast(`${file.name}: ${err}`); continue; }
+      toast(`Subiendo foto ${nuevas.length+1}...`);
+      nuevas.push((await subirFotoProducto(file)).url);
+    }
+    if(!nuevas.length) return;
+    if(!(await guardarFotosProducto(p, p.imagenes.concat(nuevas)))){ for(const u of nuevas) await borrarFotoProducto(u); return; }
+    await cargarBase(); renderProductosNegocio(); pintarGestorFotos();
+    toast(nuevas.length === 1 ? 'Foto agregada' : `${nuevas.length} fotos agregadas`);
   } catch(err) {
-    console.error('Error al cambiar la foto:', err);
+    console.error('Error al subir fotos:', err);
+    for(const u of nuevas) await borrarFotoProducto(u);
     toast('No se pudo subir la foto: ' + (err.message || err));
   }
 }
-
-async function cambiarExistencia(id, valor){
-  const e = parseInt(valor);
-  if(isNaN(e) || e < 0){ toast('Existencias inválidas'); renderProductosNegocio(); return; }
-  const res = await supabase.from('productos').update({ existencia: e }).eq('id_producto', id);
-  if(!okDB(res, 'No se pudo actualizar')) return;
-  await cargarBase(); renderProductosNegocio();
-  toast('Existencias actualizadas');
+async function quitarFotoExistente(i){
+  const p = state.productos.find(x=>x.id===productoFotoId);
+  if(!p) return;
+  const url = p.imagenes[i];
+  const lista = p.imagenes.filter((_,k)=>k!==i);
+  if(!(await guardarFotosProducto(p, lista))) return;
+  await borrarFotoProducto(url);
+  await cargarBase(); renderProductosNegocio(); pintarGestorFotos();
+  toast('Foto quitada');
 }
-
-async function cambiarPrecioProducto(id, valor){
-  const p = parseFloat(valor);
-  if(isNaN(p) || p < 0){ toast('Precio inválido'); renderProductosNegocio(); return; }
-  const res = await supabase.from('productos').update({ precio: p }).eq('id_producto', id);
-  if(!okDB(res, 'No se pudo actualizar')) return;
-  await cargarBase(); renderProductosNegocio();
-  toast('Precio actualizado');
+async function hacerPrincipal(i){
+  const p = state.productos.find(x=>x.id===productoFotoId);
+  if(!p) return;
+  const lista = [p.imagenes[i]].concat(p.imagenes.filter((_,k)=>k!==i));
+  if(!(await guardarFotosProducto(p, lista))) return;
+  await cargarBase(); renderProductosNegocio(); pintarGestorFotos();
+  toast('Foto principal actualizada');
 }
 
 async function quitarProducto(id){
@@ -1881,7 +2035,7 @@ async function quitarProducto(id){
     toast('No se puede borrar: ya aparece en pedidos.');
     return;
   }
-  if(prod && prod.imagen) await borrarFotoProducto(prod.imagen);
+  if(prod){ for(const u of (prod.imagenes.length ? prod.imagenes : [prod.imagen])) await borrarFotoProducto(u); }
   await cargarBase(); renderProductosNegocio();
   toast('Producto eliminado');
 }
@@ -1912,8 +2066,9 @@ function renderProductosNegocio(){
   if(!state.productos.length){ tb.innerHTML = `<tr><td colspan="7" class="empty">Aún no has agregado productos.</td></tr>`; return; }
   tb.innerHTML = state.productos.map(p => `
     <tr><td><div class="prod-celda">
-      <button type="button" class="prod-thumb" onclick="elegirFotoProducto(${p.id})" title="${p.imagen ? 'Cambiar foto' : 'Agregar foto'}" aria-label="${p.imagen ? 'Cambiar' : 'Agregar'} foto de ${esc(p.nombre)}">
+      <button type="button" class="prod-thumb" onclick="elegirFotoProducto(${p.id})" title="Fotos del producto" aria-label="Fotos de ${esc(p.nombre)}">
         ${p.imagen ? `<img src="${esc(p.imagen)}" alt="" loading="lazy">` : '<svg class="ico" aria-hidden="true"><use href="#i-camera"/></svg>'}
+        ${p.imagenes.length > 1 ? `<span class="thumb-n">${p.imagenes.length}</span>` : ''}
       </button><span class="strong">${esc(p.nombre)}</span></div></td><td>${esc(p.desc)}</td>
     <td><input type="number" min="0" step="0.01" value="${p.precio}" style="width:90px" onchange="cambiarPrecioProducto(${p.id}, this.value)"></td>
     <td><select onchange="cambiarFilamentoProducto(${p.id}, this.value)" aria-label="Filamento de ${esc(p.nombre)}">${opcionesFilamento(p.material, p.color)}</select></td>
@@ -2495,3 +2650,113 @@ function alternarTema(){
 document.addEventListener('DOMContentLoaded', () => {
   aplicarTema(document.documentElement.getAttribute('data-theme') === 'oscuro' ? 'oscuro' : 'claro');
 });
+
+
+/* ===================== DETALLE DE PRODUCTO (carrusel) ===================== */
+let modalProd = null;   // { id, idx, color }
+
+function abrirProducto(id){
+  const p = state.productos.find(x=>x.id===id);
+  const back = document.getElementById('prod-modal');
+  if(!p || !back) return;
+  const cols = coloresProducto(p);
+  const primero = cols.find(c=>c.piezas>0);
+  modalProd = { id, idx:0, color: primero ? primero.color : (p.color || '') };
+  back.hidden = false;
+  document.body.classList.add('sin-scroll');
+  pintarModalProducto();
+  const cerrar = document.getElementById('pm-cerrar');
+  if(cerrar) cerrar.focus();
+}
+function cerrarProducto(){
+  const back = document.getElementById('prod-modal');
+  if(back) back.hidden = true;
+  document.body.classList.remove('sin-scroll');
+  modalProd = null;
+}
+
+function pintarModalProducto(){
+  if(!modalProd) return;
+  const p = state.productos.find(x=>x.id===modalProd.id);
+  if(!p) return cerrarProducto();
+  const fotos = p.imagenes.length ? p.imagenes : [];
+  const n = fotos.length;
+  modalProd.idx = n ? ((modalProd.idx % n) + n) % n : 0;
+
+  const vis = document.getElementById('pm-visor');
+  if(vis){
+    vis.innerHTML = n
+      ? `<img src="${esc(fotos[modalProd.idx])}" alt="${esc(p.nombre)} · foto ${modalProd.idx+1} de ${n}">`
+      : '<span class="prod-img-vacia" aria-hidden="true"></span>';
+  }
+  const prev = document.getElementById('pm-prev'), next = document.getElementById('pm-next');
+  if(prev) prev.hidden = n < 2;
+  if(next) next.hidden = n < 2;
+  const cont = document.getElementById('pm-contador');
+  if(cont){ cont.hidden = n < 2; cont.textContent = `${modalProd.idx+1} / ${n}`; }
+  const mini = document.getElementById('pm-miniaturas');
+  if(mini){
+    mini.hidden = n < 2;
+    mini.innerHTML = fotos.map((u,i)=>`<button type="button" class="pm-mini ${i===modalProd.idx?'activa':''}" onclick="irAFoto(${i})" aria-label="Ver foto ${i+1}"><img src="${esc(u)}" alt=""></button>`).join('');
+  }
+
+  document.getElementById('pm-nombre').textContent = p.nombre;
+  document.getElementById('pm-precio').textContent = Q(p.precio);
+  document.getElementById('pm-desc').textContent = p.desc || 'Sin descripción.';
+
+  const cols = coloresProducto(p);
+  const zona = document.getElementById('pm-colores');
+  zona.innerHTML = cols.length
+    ? cols.map(c=>`<button type="button" class="color-opt ${mismoTexto(c.color, modalProd.color)?'activa':''}" ${c.piezas>0?'':'disabled'} onclick="elegirColorModal('${esc(c.color).replace(/'/g,"&#39;")}')" aria-pressed="${mismoTexto(c.color, modalProd.color)}">
+        <span class="color-dot" style="background:${colorCSS(c.color)}"></span>${esc(c.color)}${c.piezas>0?'':' · agotado'}</button>`).join('')
+    : '<span class="small-note">Sin colores disponibles por ahora.</span>';
+
+  const max = modalProd.color ? maxAgregable(p, modalProd.color) : 0;
+  const input = document.getElementById('pm-cant');
+  input.max = Math.max(1, max);
+  if((parseInt(input.value)||1) > max) input.value = Math.max(1, max);
+  const enCarrito = state.carrito.filter(l=>l.tipo==='producto' && l.ref===p.id && mismoTexto(l.color, modalProd.color)).reduce((a,l)=>a+l.cantidad,0);
+  document.getElementById('pm-stock').textContent = max > 0
+    ? `${max} disponible(s) en ${modalProd.color}${enCarrito ? ` · ya tienes ${enCarrito} en el carrito` : ''}`
+    : (enCarrito ? `Ya agregaste todas las disponibles en ${modalProd.color}` : 'Agotado en este color');
+  document.getElementById('pm-material').textContent = p.material ? `Material: ${p.material}` : '';
+  document.getElementById('pm-agregar').disabled = max < 1;
+  document.querySelector('#prod-modal .stepper').classList.toggle('deshabilitado', max < 1);
+  actualizarTotalModal();
+}
+function actualizarTotalModal(){
+  if(!modalProd) return;
+  const p = state.productos.find(x=>x.id===modalProd.id);
+  const n = Math.max(1, parseInt(document.getElementById('pm-cant').value) || 1);
+  document.getElementById('pm-total').textContent = p ? `Total: ${Q(p.precio * n)}` : '';
+}
+function irAFoto(i){ if(modalProd){ modalProd.idx = i; pintarModalProducto(); } }
+function moverFoto(d){ if(modalProd){ modalProd.idx += d; pintarModalProducto(); } }
+function elegirColorModal(color){ if(modalProd){ modalProd.color = color; pintarModalProducto(); } }
+function agregarDesdeModal(){
+  if(!modalProd) return;
+  const n = document.getElementById('pm-cant').value;
+  if(agregarProductoAlCarrito(modalProd.id, n, modalProd.color)){
+    document.getElementById('pm-cant').value = 1;
+    cerrarProducto();
+  }
+}
+
+// Teclado (Esc cierra, flechas cambian de foto) y deslizar con el dedo
+document.addEventListener('keydown', e => {
+  if(!modalProd) return;
+  if(e.key === 'Escape') cerrarProducto();
+  else if(e.key === 'ArrowLeft') moverFoto(-1);
+  else if(e.key === 'ArrowRight') moverFoto(1);
+});
+(function(){
+  let x0 = null;
+  document.addEventListener('pointerdown', e => { if(e.target.closest && e.target.closest('#pm-visor')) x0 = e.clientX; });
+  document.addEventListener('pointerup', e => {
+    if(x0 === null) return;
+    const dx = e.clientX - x0; x0 = null;
+    if(Math.abs(dx) > 40) moverFoto(dx < 0 ? 1 : -1);
+  });
+})();
+
+document.addEventListener('keydown', e => { if(e.key === 'Escape' && productoFotoId !== null) cerrarGestorFotos(); });
