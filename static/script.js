@@ -465,7 +465,8 @@ async function cargarCliente(){
 
   state.archivos = (arch.data||[]).map(a=>({
     id:a.id_archivo, nombre:a.nombre_archivo, material:a.material||'', color:a.color||'',
-    peso:Number(a.peso)||0, tiempo:Number(a.tiempo)||0, precio:Number(a.precio)||0, estado:a.estado||'pendiente'
+    peso:Number(a.peso)||0, tiempo:Number(a.tiempo)||0, precio:Number(a.precio)||0, estado:a.estado||'pendiente',
+    motivo:a.motivo_rechazo||'', tieneArchivo: !!a.s3_key
   }));
   state.pedidos = (carr.data||[]).map(c=>({
     id:c.id_carrito, label:idCarrito(c.id_carrito), total:Number(c.total)||0, estado:c.estado||'pendiente',
@@ -1254,6 +1255,7 @@ function handleSTL(file) {
   if(file.size > MAX_ARCHIVO_MB * 1024 * 1024){ toast(`El archivo pesa más de ${MAX_ARCHIVO_MB} MB. Redúcelo o contáctanos.`); return; }
   archivoSeleccionado = file;
   state.lastQuote = null;
+  ocultarVista3D();
   volumenMm3 = 0; areaMm2 = 0; alturaMm = 0; pesoBaseG = 0; tiempoBaseH = 0;
   areaLadoMm2 = 0; areaArribaMm2 = 0; areaAbajoMm2 = 0;
   ocultarResultado();
@@ -1280,6 +1282,7 @@ function handleSTL(file) {
       volumenMm3 = volumeMm3; areaMm2 = area; alturaMm = dims[2];
       areaLadoMm2 = aLado; areaArribaMm2 = aArriba; areaAbajoMm2 = aAbajo;
       actualizarPesoTiempo();
+      mostrarVista3D(ev.target.result, dims);
 
       toast(`Modelo leído: ${tris} triángulos · ${dims.map(d=>d.toFixed(0)).join(' × ')} mm`);
     } catch(err) {
@@ -1494,6 +1497,7 @@ function renderArchivos(){
       celdaNombre = `<td><span class="strong">${esc(a.nombre)}</span><br><span class="small-note" style="color:var(--danger);">Motivo: ${esc(a.motivo)}</span></td>`;
     }
 
+    if(a.tieneArchivo) accion = `<button class="btn btn-sm btn-3d" onclick="verArchivo3D(${a.id})"><svg class="ico" aria-hidden="true"><use href="#i-box"/></svg>Ver 3D</button> ` + accion;
     return `<tr>${celdaNombre}<td>${esc(a.material)}</td><td>${a.peso.toFixed(1)} g</td><td>${a.tiempo.toFixed(1)} h</td>
       <td class="strong">${Q(a.precio)}</td><td>${badgeEstadoArchivo(a.estado)}</td><td>${accion}</td></tr>`;
   }).join('');
@@ -2285,7 +2289,7 @@ function renderArchivosNegocio(){
     <td>${a.estado==='pendiente'
       ? `<button class="btn btn-sm btn-primary" onclick="revisarArchivo(${a.id}, 'aprobada')">Aprobar</button> <button class="btn btn-sm" onclick="revisarArchivo(${a.id}, 'rechazada')">Rechazar</button>`
       : `<span class="small-note">—</span>`}
-      ${a.tieneArchivo ? `<button class="btn btn-sm" onclick="descargarSTL(${a.id})">Descargar STL</button>` : ''}</td></tr>
+      ${a.tieneArchivo ? `<button class="btn btn-sm btn-3d" onclick="verArchivo3D(${a.id})"><svg class="ico" aria-hidden="true"><use href="#i-box"/></svg>Ver 3D</button> <button class="btn btn-sm" onclick="descargarSTL(${a.id})">Descargar STL</button>` : ''}</td></tr>
   `).join('');
 }
 
@@ -2760,3 +2764,223 @@ document.addEventListener('keydown', e => {
 })();
 
 document.addEventListener('keydown', e => { if(e.key === 'Escape' && productoFotoId !== null) cerrarGestorFotos(); });
+
+
+/* ===================== VISTA PREVIA 3D DEL .STL (three.js) ===================== */
+// Se carga solo cuando el cliente sube un archivo, para no hacer lenta la página.
+const THREE_URLS = [
+  'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
+  'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js',
+  'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js',
+];
+let promesaThree = null;
+function cargarThree(){
+  if(window.THREE && THREE.STLLoader && THREE.OrbitControls) return Promise.resolve();
+  if(promesaThree) return promesaThree;
+  const cargar = url => new Promise((ok, mal) => {
+    const sc = document.createElement('script');
+    sc.src = url; sc.async = false;
+    sc.onload = ok; sc.onerror = () => mal(new Error('No se pudo cargar ' + url));
+    document.head.appendChild(sc);
+  });
+  promesaThree = THREE_URLS.reduce((p, u) => p.then(() => cargar(u)), Promise.resolve())
+    .catch(e => { promesaThree = null; throw e; });
+  return promesaThree;
+}
+
+// Un visor por lugar: 'cot' (cotizador) y 'modal' (ventana de Mis archivos / Archivos de clientes)
+const VISORES = {
+  cot:   { caja:'visor3d',   lienzo:'visor3d-lienzo',   medidas:'visor3d-medidas',   girar:'visor3d-girar',   colorDe: () => { const s = document.getElementById('q-color'); return s ? s.value : ''; } },
+  modal: { caja:'stl-visor', lienzo:'stl-visor-lienzo', medidas:'stl-visor-medidas', girar:'stl-visor-girar', colorDe: () => vistaModalColor },
+};
+const vistas = {};   // estado three.js de cada visor
+let vistaModalColor = '';
+const vista3d = { get girar(){ return vistas.cot ? vistas.cot.girar : true; } };   // compatibilidad
+
+function colorModelo(clave){
+  const nombre = VISORES[clave || 'cot'].colorDe();
+  const c = nombre ? colorCSS(nombre) : '#2BD96B';
+  return c === 'transparent' ? '#DDE7EE' : c;
+}
+
+async function mostrarVista3D(buffer, dims, clave){
+  clave = clave || 'cot';
+  const cfg = VISORES[clave];
+  const caja = document.getElementById(cfg.caja);
+  const lienzo = document.getElementById(cfg.lienzo);
+  if(!caja || !lienzo) return false;
+  caja.hidden = false;
+  caja.classList.add('cargando');
+  caja.classList.remove('sin-vista');
+  const medidas = document.getElementById(cfg.medidas);
+  if(medidas) medidas.textContent = dims ? dims.map(d=>d.toFixed(1)).join(' × ') + ' mm' : '';
+  try {
+    await cargarThree();
+  } catch(err) {
+    console.warn(err);
+    caja.classList.remove('cargando');
+    caja.classList.add('sin-vista');
+    return false;
+  }
+  caja.classList.remove('cargando', 'sin-vista');
+  const v = vistas[clave] || (vistas[clave] = { girar:true, radio:1 });
+
+  if(!v.renderer){
+    v.renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+    v.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    lienzo.appendChild(v.renderer.domElement);
+    v.scene = new THREE.Scene();
+    v.camera = new THREE.PerspectiveCamera(40, 1, 0.1, 10000);
+    v.scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.9));
+    const luz = new THREE.DirectionalLight(0xffffff, 0.8); luz.position.set(1, 2, 1.5); v.scene.add(luz);
+    const luz2 = new THREE.DirectionalLight(0xffffff, 0.35); luz2.position.set(-1.5, 0.5, -1); v.scene.add(luz2);
+    v.controls = new THREE.OrbitControls(v.camera, v.renderer.domElement);
+    v.controls.enableDamping = true;
+    v.controls.addEventListener('start', () => { v.girar = false; actualizarBotonGiro(clave); });
+    window.addEventListener('resize', () => ajustarVista3D(clave));
+    if(clave === 'cot'){
+      const sel = document.getElementById('q-color');
+      if(sel) sel.addEventListener('change', () => { if(v.mesh) v.mesh.material.color.set(colorModelo('cot')); });
+    }
+  }
+
+  // Modelo nuevo
+  if(v.mesh){ v.scene.remove(v.mesh); v.mesh.geometry.dispose(); v.mesh.material.dispose(); v.mesh = null; }
+  if(v.grid){ v.scene.remove(v.grid); v.grid = null; }
+  const geo = new THREE.STLLoader().parse(buffer);
+  geo.rotateX(-Math.PI / 2);          // en el STL la altura es Z; en three.js es Y
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox, c = new THREE.Vector3();
+  bb.getCenter(c);
+  geo.translate(-c.x, -bb.min.y, -c.z);   // centrado y apoyado sobre la cama
+  geo.computeVertexNormals();
+  geo.computeBoundingSphere();
+  geo.computeBoundingBox();
+  v.radio = geo.boundingSphere.radius || 1;
+  if(medidas && !dims){
+    const t = geo.boundingBox;   // x, z = base; y = altura
+    medidas.textContent = [t.max.x - t.min.x, t.max.z - t.min.z, t.max.y - t.min.y].map(d=>d.toFixed(1)).join(' × ') + ' mm';
+  }
+
+  v.mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: colorModelo(clave), roughness:0.55, metalness:0.05 }));
+  v.scene.add(v.mesh);
+
+  // Cama de impresión con cuadrícula de 10 mm
+  const lado = Math.max(40, Math.ceil(Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 1.6 / 10) * 10);
+  v.grid = new THREE.GridHelper(lado, lado / 10, 0x888888, 0xcccccc);
+  v.grid.material.opacity = 0.55; v.grid.material.transparent = true;
+  v.scene.add(v.grid);
+
+  v.girar = true; actualizarBotonGiro(clave);
+  centrarVista3D(clave);
+  ajustarVista3D(clave);
+  if(!v.anim){
+    const loop = () => {
+      v.anim = requestAnimationFrame(loop);
+      const cj = document.getElementById(cfg.caja);
+      if(!cj || cj.hidden || cj.offsetParent === null) return;   // no gastar batería si no se ve
+      if(v.girar && v.mesh) v.mesh.rotation.y += 0.008;
+      v.controls.update();
+      v.renderer.render(v.scene, v.camera);
+    };
+    loop();
+  }
+  return true;
+}
+
+function centrarVista3D(clave){
+  const v = vistas[clave || 'cot'];
+  if(!v || !v.camera || !v.mesh) return;
+  const altura = v.mesh.geometry.boundingBox.max.y;
+  const d = v.radio * 2.6;
+  v.camera.position.set(d * 0.8, altura * 0.6 + d * 0.55, d * 0.9);
+  v.controls.target.set(0, altura / 2, 0);
+  v.camera.near = Math.max(0.1, v.radio / 100); v.camera.far = v.radio * 100;
+  v.camera.updateProjectionMatrix();
+  v.controls.update();
+}
+function ajustarVista3D(clave){
+  clave = clave || 'cot';
+  const v = vistas[clave], lienzo = document.getElementById(VISORES[clave].lienzo);
+  if(!v || !v.renderer || !lienzo || !lienzo.clientWidth) return;
+  const w = lienzo.clientWidth, h = lienzo.clientHeight;
+  v.renderer.setSize(w, h, false);
+  v.camera.aspect = w / h;
+  v.camera.updateProjectionMatrix();
+}
+function alternarGiro3D(clave){
+  clave = clave || 'cot';
+  const v = vistas[clave]; if(!v) return;
+  v.girar = !v.girar; actualizarBotonGiro(clave);
+}
+function actualizarBotonGiro(clave){
+  clave = clave || 'cot';
+  const v = vistas[clave], b = document.getElementById(VISORES[clave].girar);
+  if(b && v){ b.textContent = v.girar ? 'Pausar giro' : 'Girar'; b.setAttribute('aria-pressed', v.girar ? 'true' : 'false'); }
+}
+function ocultarVista3D(){
+  const caja = document.getElementById('visor3d');
+  if(caja) caja.hidden = true;
+}
+
+
+/* ===================== VER EN 3D UN ARCHIVO YA GUARDADO ===================== */
+// Se baja el .STL privado de S3 con el mismo enlace firmado de la descarga.
+// Si el bucket no permite leerlo desde la página (CORS), se pide a nuestro servidor.
+let archivo3dActual = null;
+
+async function bajarSTL(id){
+  const { data: { session } } = await supabase.auth.getSession();
+  if(!session) throw new Error('Tu sesión expiró');
+  const auth = { 'Authorization': 'Bearer ' + session.access_token };
+  try {
+    const r = await fetch(`/api/archivos/${id}/url`, { headers: auth });
+    const d = await r.json().catch(() => ({}));
+    if(!r.ok) throw new Error(d.error || ('Error ' + r.status));
+    const f = await fetch(d.url);              // directo desde S3 (necesita CORS en el bucket)
+    if(!f.ok) throw new Error('S3 respondió ' + f.status);
+    return await f.arrayBuffer();
+  } catch(err) {
+    console.warn('Lectura directa de S3 no disponible, se usa el servidor:', err);
+    const r = await fetch(`/api/archivos/${id}/stl`, { headers: auth });
+    if(!r.ok){
+      const d = await r.json().catch(() => ({}));
+      throw new Error(d.error || ('No se pudo obtener el archivo (' + r.status + ')'));
+    }
+    return await r.arrayBuffer();
+  }
+}
+
+async function verArchivo3D(id){
+  const a = (state.archivos || []).find(x=>x.id===id) || (state.archivosNegocio || []).find(x=>x.id===id);
+  const back = document.getElementById('stl-modal');
+  if(!a || !back) return;
+  archivo3dActual = id;
+  vistaModalColor = a.color || '';
+  document.getElementById('stl-titulo').textContent = a.nombre;
+  document.getElementById('stl-sub').textContent = [a.cliente && a.cliente !== '—' ? a.cliente : '', a.material && (a.material + ' · ' + a.color), a.peso ? a.peso.toFixed(1) + ' g' : '', a.tiempo ? a.tiempo.toFixed(1) + ' h' : ''].filter(Boolean).join(' · ');
+  const err = document.getElementById('stl-error');
+  err.hidden = true;
+  back.hidden = false;
+  document.body.classList.add('sin-scroll');
+  const caja = document.getElementById('stl-visor');
+  caja.hidden = false; caja.classList.add('cargando'); caja.classList.remove('sin-vista');
+  try {
+    const buffer = await bajarSTL(id);
+    if(archivo3dActual !== id) return;      // se cerró o se abrió otro mientras bajaba
+    await mostrarVista3D(buffer, null, 'modal');
+  } catch(e) {
+    console.error(e);
+    if(archivo3dActual !== id) return;
+    caja.classList.remove('cargando'); caja.classList.add('sin-vista');
+    err.textContent = 'No se pudo abrir el archivo: ' + (e.message || e);
+    err.hidden = false;
+  }
+}
+function cerrarArchivo3D(){
+  const back = document.getElementById('stl-modal');
+  if(back) back.hidden = true;
+  document.body.classList.remove('sin-scroll');
+  archivo3dActual = null;
+}
+document.addEventListener('keydown', e => { if(e.key === 'Escape' && archivo3dActual !== null) cerrarArchivo3D(); });

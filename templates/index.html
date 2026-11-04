@@ -200,6 +200,19 @@
           <span id="fileNameLabel" class="small-note"></span>
         </div>
         <input type="file" id="stlInput" accept=".stl" style="display:none">
+        <div class="visor3d" id="visor3d" hidden>
+          <div class="visor3d-lienzo" id="visor3d-lienzo" aria-label="Vista previa 3D de tu archivo. Arrastra para girar, rueda o pellizca para acercar."></div>
+          <div class="visor3d-cargando" aria-hidden="true">Preparando vista 3D…</div>
+          <div class="visor3d-error">No se pudo mostrar la vista 3D, pero tu archivo sí se leyó y puedes cotizar.</div>
+          <div class="visor3d-barra">
+            <span class="visor3d-chip" id="visor3d-medidas"></span>
+            <span class="visor3d-ayuda">Arrastra para girar · rueda o pellizca para acercar</span>
+            <span class="visor3d-botones">
+              <button type="button" class="btn btn-sm" id="visor3d-girar" aria-pressed="true" onclick="alternarGiro3D('cot')">Pausar giro</button>
+              <button type="button" class="btn btn-sm" onclick="centrarVista3D('cot')">Centrar</button>
+            </span>
+          </div>
+        </div>
         <div class="form-grid" style="margin-top:16px;">
           <div class="field"><label>Material</label><select id="q-material"></select></div>
           <div class="field"><label>Color</label><select id="q-color"></select></div>
@@ -613,6 +626,32 @@
         <p class="small-note" id="pm-stock"></p>
       </div>
       <button type="button" class="btn btn-primary pm-agregar" id="pm-agregar" onclick="agregarDesdeModal()"><svg class="ico" aria-hidden="true"><use href="#i-cart"/></svg>Agregar al carrito</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= VER ARCHIVO EN 3D (cliente y negocio) ================= -->
+<div class="modal-back" id="stl-modal" hidden onclick="if(event.target===this) cerrarArchivo3D()">
+  <div class="modal-win stl-win" role="dialog" aria-modal="true" aria-labelledby="stl-titulo">
+    <div class="modal-head">
+      <div><h2 id="stl-titulo">Archivo</h2><p id="stl-sub"></p></div>
+      <button type="button" class="icon-btn" aria-label="Cerrar" onclick="cerrarArchivo3D()"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div class="visor3d" id="stl-visor">
+        <div class="visor3d-lienzo" id="stl-visor-lienzo" aria-label="Vista 3D del archivo. Arrastra para girar, rueda o pellizca para acercar."></div>
+        <div class="visor3d-cargando" aria-hidden="true">Bajando el archivo…</div>
+        <div class="visor3d-error">No se pudo mostrar la vista 3D.</div>
+        <div class="visor3d-barra">
+          <span class="visor3d-chip" id="stl-visor-medidas"></span>
+          <span class="visor3d-ayuda">Arrastra para girar · rueda o pellizca para acercar</span>
+          <span class="visor3d-botones">
+            <button type="button" class="btn btn-sm" id="stl-visor-girar" aria-pressed="true" onclick="alternarGiro3D('modal')">Pausar giro</button>
+            <button type="button" class="btn btn-sm" onclick="centrarVista3D('modal')">Centrar</button>
+          </span>
+        </div>
+      </div>
+      <p class="field-error" id="stl-error" role="alert" hidden></p>
     </div>
   </div>
 </div>

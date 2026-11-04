@@ -816,3 +816,31 @@ body.sin-scroll{overflow:hidden;}
 .foto-box.con-foto .foto-box-txt b::after{content:' (agregar más)';}
 .pm-precio{display:inline-block; font-family:var(--display); font-weight:800; color:var(--on-accent); background:var(--gold); border:var(--border); border-radius:10px; padding:2px 14px; transform:rotate(-2deg); box-shadow:var(--shadow-sm);}
 [data-theme="oscuro"] .pm-precio{border-color:#000;}
+
+/* ---- Vista previa 3D del archivo a cotizar ---- */
+.visor3d{position:relative; margin-top:16px; border:var(--border); border-radius:14px; overflow:hidden; box-shadow:var(--shadow-sm);
+  background:radial-gradient(120% 90% at 50% 0%, #FFFFFF 0%, var(--inset) 70%);}
+.visor3d-lienzo{height:340px; cursor:grab; touch-action:none;}
+.visor3d-lienzo:active{cursor:grabbing;}
+.visor3d-lienzo canvas{display:block; width:100% !important; height:100% !important;}
+.visor3d-barra{display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 12px; border-top:var(--border); background:var(--card);}
+.visor3d-chip{font-family:var(--mono); font-size:12.5px; font-weight:700; padding:3px 10px; border-radius:20px; background:var(--gold); color:var(--on-accent); border:2px solid var(--stroke);}
+.visor3d-chip:empty{display:none;}
+.visor3d-ayuda{font-size:12.5px; color:var(--text-faint); flex:1; min-width:160px;}
+.visor3d-botones{display:flex; gap:8px;}
+.visor3d-cargando, .visor3d-error{display:none; position:absolute; left:0; right:0; top:0; height:340px; align-items:center; justify-content:center; text-align:center; padding:20px; font-weight:700; color:var(--text-dim);}
+.visor3d.cargando .visor3d-cargando{display:flex;}
+.visor3d.sin-vista .visor3d-error{display:flex;}
+.visor3d.sin-vista .visor3d-lienzo{visibility:hidden;}
+[data-theme="oscuro"] .visor3d{border-color:#3A3A42; background:radial-gradient(120% 90% at 50% 0%, #2A2A31 0%, #18181C 70%);}
+[data-theme="oscuro"] .visor3d-barra{border-top-color:#3A3A42;}
+@media (max-width:600px){ .visor3d-lienzo, .visor3d-cargando, .visor3d-error{height:260px;} .visor3d-ayuda{display:none;} .visor3d-botones{margin-left:auto;} }
+.visor3d.sin-vista .visor3d-botones, .visor3d.sin-vista .visor3d-ayuda, .visor3d.cargando .visor3d-botones{display:none;}
+
+/* ---- Ventana "Ver 3D" de archivos guardados ---- */
+.stl-win{width:min(980px,100%);}
+.stl-win .visor3d{margin-top:0;}
+.stl-win .visor3d-lienzo, .stl-win .visor3d-cargando, .stl-win .visor3d-error{height:min(62vh, 560px);}
+.btn-3d{background:var(--blue); color:#fff;}
+.btn-3d:hover{background:#4A7FFF;}
+@media (max-width:600px){ .stl-win .visor3d-lienzo, .stl-win .visor3d-cargando, .stl-win .visor3d-error{height:58vh;} }

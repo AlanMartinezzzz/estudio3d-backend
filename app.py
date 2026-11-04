@@ -217,6 +217,44 @@ def url_descarga(id_archivo):
     return jsonify(url=url)
 
 
+# --- S3: CONTENIDO DEL .STL PARA LA VISTA 3D ---
+# Respaldo de la vista previa: si el navegador no puede leer el archivo directo de S3
+# (el bucket no tiene CORS configurado), el servidor lo baja y se lo entrega.
+# Mismos permisos que la descarga: RLS decide si el usuario puede ver ese archivo.
+@app.get("/api/archivos/<int:id_archivo>/stl")
+def contenido_stl(id_archivo):
+    token, usuario, fallo = autenticar()
+    if fallo:
+        return fallo
+
+    try:
+        res = (cliente_con_token(token).table("archivos")
+        .select("s3_key").eq("id_archivo", id_archivo).limit(1).execute())
+    except Exception as e:
+        app.logger.error("Error al consultar archivo: %s", e)
+        return jsonify(error="No se pudo consultar el archivo"), 500
+
+    if not res.data or not res.data[0].get("s3_key"):
+        return jsonify(error="Archivo no encontrado"), 404
+    if not S3_BUCKET:
+        return jsonify(error="Falta configurar S3_BUCKET en el servidor"), 500
+
+    try:
+        obj = get_s3().get_object(Bucket=S3_BUCKET, Key=res.data[0]["s3_key"])
+        contenido = obj["Body"].read()
+    except ClientError as e:
+        codigo = e.response.get("Error", {}).get("Code", "")
+        app.logger.error("S3 rechazó la lectura (código %s): %s", codigo, e)
+        if codigo in ("404", "NoSuchKey", "NotFound"):
+            return jsonify(error="El archivo ya no está guardado en S3"), 404
+        return jsonify(error="El servidor no pudo leer el archivo en S3"), 502
+    except BotoCoreError as e:
+        app.logger.error("Error al leer de S3: %s", e)
+        return jsonify(error="No se pudo leer el archivo"), 502
+
+    return app.response_class(contenido, mimetype="model/stl")
+
+
 @app.errorhandler(413)
 def archivo_muy_grande(_e):
     return jsonify(error="El archivo supera el máximo permitido de 50 MB"), 413
