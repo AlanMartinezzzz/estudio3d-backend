@@ -844,3 +844,18 @@ body.sin-scroll{overflow:hidden;}
 .btn-3d{background:var(--blue); color:#fff;}
 .btn-3d:hover{background:#4A7FFF;}
 @media (max-width:600px){ .stl-win .visor3d-lienzo, .stl-win .visor3d-cargando, .stl-win .visor3d-error{height:58vh;} }
+/* ===================== CÁMARA EN VIVO ===================== */
+.vivo-win{width:min(980px,100%);}
+.vivo-marco{position:relative; aspect-ratio:16/9; background:var(--dark-surface); border:var(--border); border-radius:12px; overflow:hidden;}
+.vivo-marco img{width:100%; height:100%; object-fit:contain; display:block;}
+.vivo-marco img:not([src]){visibility:hidden;}
+.vivo-chip{position:absolute; top:12px; left:12px; display:flex; align-items:center; gap:7px; padding:4px 10px; border-radius:999px; background:rgba(0,0,0,.6); color:#fff; font-family:var(--mono); font-size:11.5px; letter-spacing:.5px;}
+.vivo-chip .rec-dot{width:8px; height:8px;}
+.vivo-marco.sin-senal .vivo-chip{display:none;}
+.vivo-aviso{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:20px; text-align:center; color:#CFCFCB; font-family:var(--mono); font-size:13px; background:rgba(0,0,0,.55);}
+.vivo-aviso[hidden]{display:none;}
+.btn-vivo{background:var(--pink); color:#fff;}
+.btn-vivo:hover{filter:brightness(1.08);}
+.cam-card select{width:100%; margin-top:10px; font-size:12px;}
+.cam-card .senal{font-family:var(--mono); font-size:11px; margin-top:4px; color:#BDBDBD;}
+.cam-card .senal.on{color:#7BE495;}

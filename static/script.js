@@ -11,7 +11,8 @@ const state = {
   colores: [],             // { id, nombre }
   productos: [],           // { id, nombre, desc, precio, existencias }
   filamentos: [],          // { id, nombre, restante, costo }
-  camaras: [],             // { id, nombre, estado, archivo }
+  camaras: [],             // { id, nombre, estado, archivo, idArchivo }
+  camarasCliente: [],      // cámaras que el cliente puede ver (RLS: solo las de SUS piezas)
 
   // --- Lo del CLIENTE ---
   perfil: null,            // fila de 'usuarios'
@@ -458,10 +459,12 @@ async function cargarCliente(){
 
   const idUsuarioConsulta = state.perfil.id_user;
 
-  const [arch, carr] = await Promise.all([
+  const [arch, carr, cams] = await Promise.all([
     supabase.from('archivos').select('*').eq('id_usuario', idUsuarioConsulta).order('id_archivo', { ascending:false }),
     supabase.from('carritos').select('*, carrito_items(*)').eq('id_usuario', idUsuarioConsulta).order('id_carrito', { ascending:false }),
+    supabase.from('camaras').select('id_camara, nombre, id_archivo').not('id_archivo', 'is', null),
   ]);
+  state.camarasCliente = (cams.data||[]).map(c=>({ id:c.id_camara, nombre:c.nombre||('Cámara '+c.id_camara), idArchivo:c.id_archivo }));
 
   state.archivos = (arch.data||[]).map(a=>({
     id:a.id_archivo, nombre:a.nombre_archivo, material:a.material||'', color:a.color||'',
@@ -483,7 +486,7 @@ async function cargarNegocio(){
     supabase.from('archivos').select('*, usuarios(correo)').order('id_archivo', { ascending:false }),
   ]);
   state.filamentos = (fil.data||[]).map(f=>({ id:f.id_filamento, nombre:f.tipo||'', restante:f.cantidad||0, costo:Number(f.precio_costo)||0 }));
-  state.camaras = (cam.data||[]).map(c=>({ id:c.id_camara, nombre:c.nombre||('Cámara '+c.id_camara), estado:c.estado||'inactiva', archivo:c.archivo||null }));
+  state.camaras = (cam.data||[]).map(c=>({ id:c.id_camara, nombre:c.nombre||('Cámara '+c.id_camara), estado:c.estado||'inactiva', archivo:c.archivo||null, idArchivo:c.id_archivo||null }));
   state.carritosNegocio = (carr.data||[]).map(c=>({
     id:c.id_carrito, label:idCarrito(c.id_carrito), cliente:(c.usuarios && c.usuarios.correo) || '—',
     total:Number(c.total)||0, estado:c.estado||'pendiente', fecha:fmtFecha(c.fecha), ts:new Date(c.fecha).getTime(),
@@ -1497,6 +1500,8 @@ function renderArchivos(){
       celdaNombre = `<td><span class="strong">${esc(a.nombre)}</span><br><span class="small-note" style="color:var(--danger);">Motivo: ${esc(a.motivo)}</span></td>`;
     }
 
+    const camVivo = (state.camarasCliente||[]).find(c=>c.idArchivo===a.id);
+    if(camVivo) accion = `<button class="btn btn-sm btn-vivo" onclick="abrirEnVivo(${camVivo.id})"><span class="rec-dot" style="width:8px;height:8px;display:inline-block;margin-right:6px;"></span>En vivo</button> ` + accion;
     if(a.tieneArchivo) accion = `<button class="btn btn-sm btn-3d" onclick="verArchivo3D(${a.id})"><svg class="ico" aria-hidden="true"><use href="#i-box"/></svg>Ver 3D</button> ` + accion;
     return `<tr>${celdaNombre}<td>${esc(a.material)}</td><td>${a.peso.toFixed(1)} g</td><td>${a.tiempo.toFixed(1)} h</td>
       <td class="strong">${Q(a.precio)}</td><td>${badgeEstadoArchivo(a.estado)}</td><td>${accion}</td></tr>`;
@@ -2210,17 +2215,21 @@ async function alternarCamara(id){
   const c = state.camaras.find(x=>x.id===id);
   if(!c) return;
   const nuevo = c.estado === 'activa' ? 'inactiva' : 'activa';
-  const res = await supabase.from('camaras').update({ estado: nuevo, archivo: nuevo==='activa' ? c.archivo : null }).eq('id_camara', id);
+  const res = await supabase.from('camaras').update({ estado: nuevo, archivo: nuevo==='activa' ? c.archivo : null, id_archivo: nuevo==='activa' ? c.idArchivo : null }).eq('id_camara', id);
   if(!okDB(res, 'No se pudo actualizar')) return;
   await cargarNegocio(); renderCamaras(); renderKPIs();
 }
 
-async function asignarArchivoCamara(id){
-  const nombre = prompt('¿Qué pieza está imprimiendo/vigilando esta cámara?');
-  if(nombre === null) return;
-  const res = await supabase.from('camaras').update({ archivo: nombre.trim() || null, estado: nombre.trim() ? 'activa' : 'inactiva' }).eq('id_camara', id);
-  if(!okDB(res, 'No se pudo actualizar')) return;
+// La cámara apunta a una pieza (id_archivo). Con eso el CLIENTE dueño de esa pieza la puede ver en vivo.
+async function asignarArchivoCamara(id, valor){
+  const idArchivo = valor ? Number(valor) : null;
+  const a = idArchivo ? (state.archivosNegocio||[]).find(x=>x.id===idArchivo) : null;
+  const res = await supabase.from('camaras').update({
+    id_archivo: idArchivo, archivo: a ? a.nombre : null, estado: idArchivo ? 'activa' : 'inactiva'
+  }).eq('id_camara', id);
+  if(!okDB(res, 'No se pudo asignar la pieza')) return;
   await cargarNegocio(); renderCamaras(); renderKPIs();
+  toast(a ? `El cliente ${a.cliente} ya puede ver «${a.nombre}» en vivo` : 'Cámara sin pieza asignada');
 }
 
 async function quitarCamara(id){
@@ -2592,12 +2601,39 @@ function renderCamaras(){
     <div class="cam-card"><div class="row-top"><span class="name">${esc(c.nombre)}</span>${c.estado==='activa' ? '<span class="rec-dot"></span>' : ''}</div>
     <span class="badge ${esc(c.estado)}">${c.estado==='activa'?'Activa':'Inactiva'}</span>
     <div class="file">${c.archivo ? 'Vigilando: ' + esc(c.archivo) : 'Sin trabajo asignado'}</div>
+    <div class="senal ${senalCamaras[c.id] ? 'on' : ''}">${senalCamaras[c.id] ? '● Transmitiendo' : '○ Sin señal del puente'} · ID ${c.id}</div>
+    <select aria-label="Pieza que vigila ${esc(c.nombre)}" onchange="asignarArchivoCamara(${c.id}, this.value)">
+      <option value="">— Sin pieza asignada —</option>
+      ${(state.archivosNegocio||[]).filter(a=>a.estado==='aprobada' || a.id===c.idArchivo).map(a=>
+        `<option value="${a.id}" ${a.id===c.idArchivo?'selected':''}>${esc(a.nombre)} · ${esc(a.cliente)}</option>`).join('')}
+    </select>
     <div style="display:flex; gap:6px; margin-top:10px; flex-wrap:wrap;">
+      <button class="btn btn-sm btn-vivo" onclick="abrirEnVivo(${c.id})">Ver en vivo</button>
       <button class="btn btn-sm" onclick="alternarCamara(${c.id})">${c.estado==='activa' ? 'Desactivar' : 'Activar'}</button>
-      <button class="btn btn-sm" onclick="asignarArchivoCamara(${c.id})">Asignar pieza</button>
       <button class="btn btn-sm" onclick="quitarCamara(${c.id})">Quitar</button>
     </div></div>
   `).join('');
+  revisarSenalCamaras();
+}
+
+// Qué cámaras están mandando fotos ahora (lo sabe el servidor). Se refresca cada 15 s mientras se ve el panel.
+let senalCamaras = {}, senalTimer = null;
+async function revisarSenalCamaras(){
+  clearTimeout(senalTimer);
+  const vista = document.getElementById('n-camaras');
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if(!session) return;
+    const r = await fetch('/api/camaras/estado', { headers: { 'Authorization': 'Bearer ' + session.access_token } });
+    if(!r.ok) return;
+    const d = await r.json();
+    const nuevo = {};
+    Object.entries(d).forEach(([id, v]) => { if(v.enLinea) nuevo[id] = true; });
+    const cambio = JSON.stringify(nuevo) !== JSON.stringify(senalCamaras);
+    senalCamaras = nuevo;
+    if(cambio) { renderCamaras(); return; }   // renderCamaras vuelve a programar la revisión
+  } catch(e) { /* sin servidor: se reintenta */ }
+  if(vista && vista.classList.contains('active')) senalTimer = setTimeout(revisarSenalCamaras, 15000);
 }
 
 let vistaCarritos = 'curso';
@@ -2984,3 +3020,88 @@ function cerrarArchivo3D(){
   archivo3dActual = null;
 }
 document.addEventListener('keydown', e => { if(e.key === 'Escape' && archivo3dActual !== null) cerrarArchivo3D(); });
+
+/* ===================== CÁMARA EN VIVO ===================== */
+// La página pide la última foto ~3 veces por segundo. Con ?desde=N el servidor
+// responde 204 (vacío) si aún no hay una foto nueva, así no se baja la misma dos veces.
+let vivo = null;   // { idCamara, numero, timer, url, token }
+
+async function abrirEnVivo(idCamara){
+  // Título: el cliente ve el nombre de SU pieza; el negocio, el de la cámara
+  const cc = (state.camarasCliente||[]).find(c=>c.id===idCamara);
+  const pieza = cc ? (state.archivos||[]).find(a=>a.id===cc.idArchivo) : null;
+  const cn = (state.camaras||[]).find(c=>c.id===idCamara);
+  const titulo = pieza ? pieza.nombre : (cn ? cn.nombre : 'En vivo');
+  const { data: { session } } = await supabase.auth.getSession();
+  if(!session){ toast('Inicia sesión para ver la cámara'); return; }
+  cerrarEnVivo();
+  vivo = { idCamara, numero: 0, timer: null, url: null, token: session.access_token, fallos: 0 };
+  document.getElementById('vivo-titulo').textContent = titulo || 'En vivo';
+  document.getElementById('vivo-sub').textContent = 'Imagen de la impresora, se actualiza sola';
+  const img = document.getElementById('vivo-img');
+  img.removeAttribute('src');
+  avisoVivo('Conectando con la cámara…');
+  document.getElementById('vivo-modal').hidden = false;
+  document.body.classList.add('sin-scroll');
+  pedirFotoVivo();
+}
+
+function avisoVivo(texto){
+  const aviso = document.getElementById('vivo-aviso');
+  const marco = aviso.parentElement;
+  aviso.hidden = !texto;
+  aviso.textContent = texto || '';
+  marco.classList.toggle('sin-senal', !!texto);
+}
+
+async function pedirFotoVivo(){
+  if(!vivo) return;
+  const yo = vivo;
+  let espera = 350;
+  try {
+    if(document.hidden){ espera = 1500; }        // pestaña oculta: no gastar internet
+    else {
+      const r = await fetch(`/api/camaras/${yo.idCamara}/en-vivo?desde=${yo.numero}`,
+                            { headers: { 'Authorization': 'Bearer ' + yo.token }, cache: 'no-store' });
+      if(vivo !== yo) return;                      // se cerró mientras llegaba
+      if(r.status === 200){
+        const blob = await r.blob();
+        if(vivo !== yo) return;
+        const url = URL.createObjectURL(blob);
+        document.getElementById('vivo-img').src = url;
+        if(yo.url) URL.revokeObjectURL(yo.url);
+        yo.url = url;
+        yo.numero = Number(r.headers.get('X-Foto-Numero')) || yo.numero + 1;
+        yo.fallos = 0;
+        avisoVivo('');
+        const edad = Number(r.headers.get('X-Foto-Edad')) || 0;
+        document.getElementById('vivo-sub').textContent = edad > 3 ? `Retraso de ${edad.toFixed(0)} s (internet del taller lento)` : 'Imagen de la impresora, se actualiza sola';
+      } else if(r.status === 204){
+        /* nada nuevo todavía */
+      } else if(r.status === 401){
+        const { data: { session } } = await supabase.auth.getSession();   // el token se renovó
+        if(session) yo.token = session.access_token; else { avisoVivo('Tu sesión expiró. Vuelve a entrar.'); return; }
+      } else {
+        const d = await r.json().catch(() => ({}));
+        avisoVivo(d.sinSenal ? 'La cámara no está transmitiendo en este momento.\nVuelve a intentar en unos minutos.' : (d.error || 'No se pudo ver la cámara'));
+        espera = d.sinSenal ? 3000 : 6000;
+      }
+    }
+  } catch(e) {
+    yo.fallos++;
+    if(yo.fallos > 3) avisoVivo('Sin conexión con el servidor. Reintentando…');
+    espera = 2000;
+  }
+  if(vivo === yo) yo.timer = setTimeout(pedirFotoVivo, espera);
+}
+
+function cerrarEnVivo(){
+  if(vivo){
+    clearTimeout(vivo.timer);
+    if(vivo.url) URL.revokeObjectURL(vivo.url);
+    vivo = null;
+  }
+  const back = document.getElementById('vivo-modal');
+  if(back && !back.hidden){ back.hidden = true; document.body.classList.remove('sin-scroll'); }
+}
+document.addEventListener('keydown', e => { if(e.key === 'Escape' && vivo) cerrarEnVivo(); });

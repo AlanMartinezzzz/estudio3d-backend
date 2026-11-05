@@ -12,3 +12,4 @@ __pycache__/
 # Ignorar archivos del sistema operativo
 .DS_Store
 Thumbs.db
+puente_camara/iniciar_camara.bat

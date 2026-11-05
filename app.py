@@ -1,5 +1,8 @@
 import os
 import hashlib
+import hmac
+import threading
+import time
 import re
 import unicodedata
 from urllib.parse import quote
@@ -253,6 +256,115 @@ def contenido_stl(id_archivo):
         return jsonify(error="No se pudo leer el archivo"), 502
 
     return app.response_class(contenido, mimetype="model/stl")
+
+
+# =====================================================================
+# --- CÁMARAS EN VIVO ---
+# La cámara está en el taller (no en la nube). Un programita en la PC del taller
+# (puente_camara/camara_puente.py) toma una foto cada ~0.5 s y la ENVÍA aquí.
+# El servidor guarda solo la última foto de cada cámara, en memoria, y la página
+# la va pidiendo. Así no hay que abrir puertos en el router del taller.
+#
+# OJO: funciona porque el contenedor corre con 1 worker de gunicorn (Dockerfile).
+# Si algún día se suben los workers, las fotos tendrían que ir a Redis.
+# =====================================================================
+CAMARA_TOKEN = os.environ.get("CAMARA_TOKEN")      # clave secreta que comparte con el puente
+SIN_SENAL_SEG = 10                                  # sin fotos en 10 s => "sin señal"
+MAX_FOTO = 2 * 1024 * 1024                          # 2 MB por foto, de sobra para 720p
+
+_fotos = {}            # id_camara -> (jpeg, numero, hora)
+_fotos_lock = threading.Lock()
+_permisos = {}         # (token, id_camara) -> (puede_ver, expira). Evita preguntar a Supabase en cada foto
+_permisos_lock = threading.Lock()
+PERMISO_SEG = 30
+
+
+def token_del_puente():
+    # Se acepta en X-Camara-Token o en Authorization (CloudFront ya deja pasar Authorization)
+    t = request.headers.get("X-Camara-Token") or token_de_la_peticion() or ""
+    return t.strip()
+
+
+@app.post("/api/camaras/<int:id_camara>/foto")
+def recibir_foto(id_camara):
+    if not CAMARA_TOKEN:
+        return jsonify(error="Falta configurar CAMARA_TOKEN en el servidor"), 500
+    if not hmac.compare_digest(token_del_puente().encode(), CAMARA_TOKEN.encode()):
+        return jsonify(error="Clave de cámara incorrecta"), 403
+
+    datos = request.get_data(cache=False)
+    if not datos or len(datos) > MAX_FOTO:
+        return jsonify(error="Foto vacía o demasiado grande"), 400
+    if not datos.startswith(b"\xff\xd8"):          # todo JPEG empieza así
+        return jsonify(error="La foto debe ser JPEG"), 400
+
+    with _fotos_lock:
+        anterior = _fotos.get(id_camara)
+        numero = anterior[1] + 1 if anterior else 1
+        _fotos[id_camara] = (datos, numero, time.time())
+    return jsonify(ok=True, numero=numero)
+
+
+def puede_ver_camara(token, id_camara):
+    """RLS decide: el negocio ve todas; un cliente solo la que tiene asignada SU pieza."""
+    ahora = time.time()
+    clave = (token, id_camara)
+    with _permisos_lock:
+        guardado = _permisos.get(clave)
+        if guardado and guardado[1] > ahora:
+            return guardado[0]
+
+    usuario = usuario_autenticado(token)
+    puede = False
+    if usuario is not None:
+        try:
+            res = (cliente_con_token(token).table("camaras")
+                   .select("id_camara").eq("id_camara", id_camara).limit(1).execute())
+            puede = bool(res.data)
+        except Exception as e:
+            app.logger.warning("No se pudo comprobar el permiso de la cámara %s: %s", id_camara, e)
+
+    with _permisos_lock:
+        if len(_permisos) > 2000:                  # que no crezca sin límite
+            _permisos.clear()
+        _permisos[clave] = (puede, ahora + PERMISO_SEG)
+    return puede
+
+
+@app.get("/api/camaras/<int:id_camara>/en-vivo")
+def foto_en_vivo(id_camara):
+    """Devuelve la última foto. Con ?desde=N responde 204 si todavía no hay una más nueva."""
+    token = token_de_la_peticion()
+    if not token:
+        return jsonify(error="Inicia sesión para ver la cámara"), 401
+    if not puede_ver_camara(token, id_camara):
+        return jsonify(error="No tienes acceso a esta cámara"), 403
+
+    with _fotos_lock:
+        foto = _fotos.get(id_camara)
+    if not foto or time.time() - foto[2] > SIN_SENAL_SEG:
+        return jsonify(error="La cámara no está transmitiendo", sinSenal=True), 404
+
+    jpeg, numero, hora = foto
+    if request.args.get("desde", type=int) == numero:
+        return "", 204
+    resp = app.response_class(jpeg, mimetype="image/jpeg")
+    resp.headers["X-Foto-Numero"] = str(numero)
+    resp.headers["X-Foto-Edad"] = f"{time.time() - hora:.1f}"
+    resp.headers["Access-Control-Expose-Headers"] = "X-Foto-Numero, X-Foto-Edad"
+    return resp
+
+
+@app.get("/api/camaras/estado")
+def estado_camaras():
+    """Qué cámaras están mandando fotos ahora mismo (para las tarjetas del panel)."""
+    token, usuario, fallo = autenticar()
+    if fallo:
+        return fallo
+    ahora = time.time()
+    with _fotos_lock:
+        return jsonify({str(k): {"enLinea": ahora - v[2] <= SIN_SENAL_SEG, "edad": round(ahora - v[2], 1)}
+                        for k, v in _fotos.items()})
 
 
 @app.errorhandler(413)

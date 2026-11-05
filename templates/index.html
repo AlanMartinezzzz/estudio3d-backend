@@ -631,6 +631,23 @@
 </div>
 
 <!-- ================= VER ARCHIVO EN 3D (cliente y negocio) ================= -->
+<!-- ================= CÁMARA EN VIVO ================= -->
+<div class="modal-back" id="vivo-modal" hidden onclick="if(event.target===this) cerrarEnVivo()">
+  <div class="modal-win vivo-win" role="dialog" aria-modal="true" aria-labelledby="vivo-titulo">
+    <div class="modal-head">
+      <div><h2 id="vivo-titulo">En vivo</h2><p id="vivo-sub"></p></div>
+      <button type="button" class="icon-btn" aria-label="Cerrar" onclick="cerrarEnVivo()"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div class="vivo-marco">
+        <img id="vivo-img" alt="Imagen en vivo de la impresora">
+        <span class="vivo-chip" id="vivo-chip"><span class="rec-dot"></span>EN VIVO</span>
+        <div class="vivo-aviso" id="vivo-aviso">Conectando con la cámara…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-back" id="stl-modal" hidden onclick="if(event.target===this) cerrarArchivo3D()">
   <div class="modal-win stl-win" role="dialog" aria-modal="true" aria-labelledby="stl-titulo">
     <div class="modal-head">
