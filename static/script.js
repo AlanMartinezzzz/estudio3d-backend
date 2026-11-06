@@ -53,6 +53,14 @@ function okDB(res, msg){
 /* ===================== AUTENTICACIÓN & SUPABASE ===================== */
 let supabase = null;
 
+// Se lee la URL antes de que Supabase la limpie:
+//  #...type=recovery        -> el usuario viene del correo "olvidé mi contraseña"
+//  #error_code=otp_expired  -> el enlace ya venció o ya se usó
+const _hashAuth = new URLSearchParams(location.hash.replace(/^#/, ''));
+const _queryAuth = new URLSearchParams(location.search);
+let vieneDeRecuperacion = _hashAuth.get('type') === 'recovery';
+const errorEnlaceAuth = _hashAuth.get('error_code') || _queryAuth.get('error_code') || '';
+
 async function initSupabase() {
   if (supabase) return true;
   try {
@@ -68,6 +76,10 @@ async function initSupabase() {
       return false;
     }
     supabase = supabaseLib.createClient(config.supabaseUrl, config.supabaseKey);
+    // Supabase avisa cuando la sesión viene de un enlace de recuperación
+    supabase.auth.onAuthStateChange((evento) => {
+      if (evento === 'PASSWORD_RECOVERY') { vieneDeRecuperacion = true; abrirNuevaPassword(); }
+    });
     return true;
   } catch (err) {
     console.error("Error al inicializar Supabase:", err);
@@ -81,6 +93,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   const ok = await initSupabase();
   if (!ok) return;
   const { data: { session } } = await supabase.auth.getSession();
+  if (errorEnlaceAuth) {
+    history.replaceState(null, '', location.pathname);
+    toast(errorEnlaceAuth === 'otp_expired'
+      ? 'El enlace venció o ya se usó. Pide uno nuevo en «¿Olvidaste tu contraseña?».'
+      : 'No se pudo completar el inicio de sesión. Intenta de nuevo.');
+  }
+  if (session && vieneDeRecuperacion) { abrirNuevaPassword(); return; }   // primero la contraseña nueva
   if (session) mostrarApp(await obtenerRol());
 });
 
@@ -106,17 +125,21 @@ function cerrarLogin() {
 
 function toggleModoAuth(modo) {
   const titulo = document.getElementById('modal-titulo');
-  const groupLogin = document.getElementById('btn-login-group');
-  const groupRegistro = document.getElementById('btn-registro-group');
-  if (modo === 'registro') {
-    if (titulo) titulo.textContent = 'Crear Cuenta';
-    if (groupLogin) groupLogin.style.display = 'none';
-    if (groupRegistro) groupRegistro.style.display = 'block';
-  } else {
-    if (titulo) titulo.textContent = 'Iniciar Sesión';
-    if (groupLogin) groupLogin.style.display = 'block';
-    if (groupRegistro) groupRegistro.style.display = 'none';
-  }
+  const grupos = {
+    login: document.getElementById('btn-login-group'),
+    registro: document.getElementById('btn-registro-group'),
+    recuperar: document.getElementById('btn-recuperar-group'),
+  };
+  if (!grupos[modo]) modo = 'login';
+  Object.keys(grupos).forEach(k => { if (grupos[k]) grupos[k].style.display = (k === modo) ? 'block' : 'none'; });
+  if (titulo) titulo.textContent = { login: 'Iniciar Sesión', registro: 'Crear Cuenta', recuperar: 'Recuperar contraseña' }[modo];
+  // En "recuperar" solo se pide el correo
+  const campoPass = document.getElementById('campo-pass');
+  const ayuda = document.getElementById('recuperar-ayuda');
+  const google = document.getElementById('auth-google');
+  if (campoPass) campoPass.style.display = modo === 'recuperar' ? 'none' : '';
+  if (ayuda) ayuda.hidden = modo !== 'recuperar';
+  if (google) google.style.display = modo === 'recuperar' ? 'none' : '';
 }
 
 function esEmailValido(email) {
@@ -246,13 +269,107 @@ async function iniciarSesionGoogle() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin
+        redirectTo: window.location.origin,
+        queryParams: { prompt: 'select_account' }   // deja elegir la cuenta de Google
       }
     });
     if (error) alert("Error al conectar con Google: " + error.message);
   } catch (err) {
     console.error("Excepción con Google Auth:", err);
   }
+}
+
+/* ===================== OLVIDÉ MI CONTRASEÑA ===================== */
+let enviandoEnlace = false;
+
+// Paso 1: mandar el correo con el enlace
+async function enviarEnlaceRecuperacion() {
+  if (enviandoEnlace) return;
+  if (!supabase) await initSupabase();
+  if (!supabase) return;
+  const input = document.getElementById('login-email');
+  const email = input ? input.value.trim() : '';
+  if (!esEmailValido(email)) { toast('Escribe un correo válido'); if (input) input.focus(); return; }
+
+  const btn = document.getElementById('btn-enviar-enlace');
+  enviandoEnlace = true;
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+    if (error && error.status === 429) {
+      toast('Ya pediste varios enlaces. Espera unos minutos e intenta de nuevo.');
+    } else if (error) {
+      console.error('Error al enviar enlace:', error);
+      toast('No se pudo enviar el correo. Intenta de nuevo más tarde.');
+    } else {
+      // Por seguridad se dice lo mismo exista o no la cuenta
+      toast('Si ese correo tiene cuenta, te llegará un enlace. Revisa también spam.');
+      toggleModoAuth('login');
+    }
+  } catch (err) {
+    console.error('Excepción al enviar enlace:', err);
+    toast('No se pudo conectar. Revisa tu internet.');
+  } finally {
+    enviandoEnlace = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Enviar enlace'; }
+  }
+}
+
+// Paso 2: al volver desde el correo, pedir la contraseña nueva
+async function abrirNuevaPassword() {
+  const m = document.getElementById('nueva-pass-modal');
+  if (!m || !m.hidden) return;
+  cerrarLogin();
+  history.replaceState(null, '', location.pathname);   // quita el token de la barra de direcciones
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    const txt = document.getElementById('np-correo');
+    if (txt && user && user.email) txt.textContent = 'Escribe la nueva contraseña para ' + user.email + '.';
+  } catch (e) {}
+  m.hidden = false;
+  const p = document.getElementById('np-pass');
+  if (p) { p.value = ''; p.focus(); }
+  const p2 = document.getElementById('np-pass2'); if (p2) p2.value = '';
+}
+
+let guardandoPassword = false;
+async function guardarNuevaPassword() {
+  if (guardandoPassword) return;
+  const p1 = (document.getElementById('np-pass')?.value || '');
+  const p2 = (document.getElementById('np-pass2')?.value || '');
+  if (p1.length < 6) { toast('La contraseña debe tener al menos 6 caracteres'); return; }
+  if (p1 !== p2) { toast('Las contraseñas no coinciden'); return; }
+
+  const btn = document.getElementById('np-guardar');
+  guardandoPassword = true;
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+  try {
+    const { error } = await supabase.auth.updateUser({ password: p1 });
+    if (error) {
+      const msg = /different from the old/i.test(error.message) ? 'La contraseña nueva debe ser distinta a la anterior'
+                : /session/i.test(error.message) ? 'El enlace venció. Pide uno nuevo.'
+                : 'No se pudo cambiar: ' + error.message;
+      toast(msg);
+      return;
+    }
+    vieneDeRecuperacion = false;
+    document.getElementById('nueva-pass-modal').hidden = true;
+    toast('¡Listo! Tu contraseña se cambió.');
+    mostrarApp(await obtenerRol());
+  } catch (err) {
+    console.error('Excepción al cambiar contraseña:', err);
+    toast('No se pudo conectar. Revisa tu internet.');
+  } finally {
+    guardandoPassword = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar contraseña'; }
+  }
+}
+
+// Si cancela, se cierra la sesión temporal del enlace: no entra sin cambiar la contraseña
+async function cancelarNuevaPassword() {
+  document.getElementById('nueva-pass-modal').hidden = true;
+  vieneDeRecuperacion = false;
+  if (supabase) await supabase.auth.signOut();
 }
 
 async function registrarse() {
@@ -876,7 +993,7 @@ async function cambiarPassword(){
   if(state.esSoloGoogle){ toast('Tu cuenta usa Google: administra tu contraseña desde tu cuenta de Google'); return; }
   const correo = state.perfil && state.perfil.correo;
   if(!correo){ toast('No encontramos tu correo'); return; }
-  const { error } = await supabase.auth.resetPasswordForEmail(correo);
+  const { error } = await supabase.auth.resetPasswordForEmail(correo, { redirectTo: window.location.origin });
   toast(error ? 'No se pudo enviar el correo: ' + error.message : 'Te enviamos un correo para cambiar tu contraseña');
 }
 

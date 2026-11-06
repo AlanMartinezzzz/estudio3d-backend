@@ -319,7 +319,7 @@ def puede_ver_camara(token, id_camara):
     if usuario is not None:
         try:
             res = (cliente_con_token(token).table("camaras")
-                   .select("id_camara").eq("id_camara", id_camara).limit(1).execute())
+                .select("id_camara").eq("id_camara", id_camara).limit(1).execute())
             puede = bool(res.data)
         except Exception as e:
             app.logger.warning("No se pudo comprobar el permiso de la cámara %s: %s", id_camara, e)

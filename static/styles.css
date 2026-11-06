@@ -1,7 +1,7 @@
 /* =====================================================================
-   ESTUDIO 3D · Estilo de marca 3G
-   Papel claro, tinta negra, bordes gruesos, sombra dura y acentos de color.
-   Tipografía:Outfit (400/600/800) + JetBrains Mono para cifras pequeñas.
+  ESTUDIO 3D · Estilo de marca 3G
+  Papel claro, tinta negra, bordes gruesos, sombra dura y acentos de color.
+  Tipografía:Outfit (400/600/800) + JetBrains Mono para cifras pequeñas.
    ===================================================================== */
 :root{
   /* --- Paleta 3G --- */
@@ -593,7 +593,7 @@ select{color-scheme:light;}
 @media (max-width:600px){ .theme-btn{width:40px; height:40px;} }
 
 /* =====================================================================
-   MODO OSCURO · paleta oscura de 3G
+MODO OSCURO · paleta oscura de 3G
    ===================================================================== */
 [data-theme="oscuro"]{
   color-scheme:dark;
@@ -859,3 +859,11 @@ body.sin-scroll{overflow:hidden;}
 .cam-card select{width:100%; margin-top:10px; font-size:12px;}
 .cam-card .senal{font-family:var(--mono); font-size:11px; margin-top:4px; color:#BDBDBD;}
 .cam-card .senal.on{color:#7BE495;}
+
+/* ===================== LOGIN: GOOGLE Y RECUPERAR CONTRASEÑA ===================== */
+.btn-google{background:#FFFFFF; color:#1F1F1F; gap:10px;}
+.btn-google:hover{background:#F7F7F7;}
+.auth-sep{display:flex; align-items:center; gap:10px; margin:4px 0 12px; color:#6B6B6B; font-size:13px; font-weight:600;}
+.auth-sep::before, .auth-sep::after{content:""; flex:1; border-top:2px solid #D8D8D3;}
+.auth-ayuda{font-size:13.5px; line-height:1.45; color:#555555; margin:0 0 14px;}
+.auth-olvide{font-size:13px; color:#555555;}
