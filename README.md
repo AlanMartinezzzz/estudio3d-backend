@@ -1,3 +1,23 @@
+
+DOCUMENTACION: [Uploading Estudio 3D — Documentación.pdf…]()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 @echo off
 REM Plantilla. Copiala como iniciar_camara_logi.bat (o _pc) y pon tus valores.
 REM Los archivos iniciar_camara*.bat estan en .gitignore: NUNCA se suben a GitHub.
