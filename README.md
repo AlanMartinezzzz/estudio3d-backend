@@ -1,7 +1,7 @@
-# Estudio 3D — Documentación de lo nuevo e implementado
+# Estudio 3D — Documentación 
 
 **Ingeniería de Software · Universidad Galileo, FISICC · 2026**
-Alan Martínez (24000683) · Geovanni (24001975) · Catedrático: Axel Benavides
+Alan Martínez (24000683) · Geovanni (24001975) · Catedrático: Adrian Catalan
 
 ## Resumen
 
