@@ -13,3 +13,5 @@ __pycache__/
 .DS_Store
 Thumbs.db
 puente_camara/iniciar_camara.bat
+
+puente_camara/iniciar_camara*.bat
