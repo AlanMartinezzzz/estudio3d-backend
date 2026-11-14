@@ -190,6 +190,7 @@
         <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>
         <input id="buscador" type="search" placeholder="Buscar en el catálogo..." autocomplete="off" aria-label="Buscar en el catálogo" oninput="if(!this.value && busquedaCatalogo){ limpiarBusqueda(); }">
       </form>
+      <button type="button" class="btn-ayuda" onclick="abrirInstrucciones()" title="Ver instrucciones"><span class="btn-ayuda-q" aria-hidden="true">?</span><span class="btn-ayuda-lbl">Instrucciones</span></button>
       <button type="button" class="userchip" onclick="abrirPerfil()" aria-haspopup="dialog" aria-label="Abrir mi perfil" title="Mi perfil"><span class="avatar avatar-sm" id="pf-avatar-top">?</span><span id="pf-nombre-top">Cliente</span><svg class="ico" aria-hidden="true"><use href="#i-chevron"/></svg></button>
     </div>
     <div class="view" id="v-cotizador">
@@ -198,6 +199,7 @@
         <div class="dropzone" id="dropzone" onclick="document.getElementById('stlInput').click()">
           <strong>Haz clic para subir</strong> o arrastra tu archivo .STL aquí<br>
           <span id="fileNameLabel" class="small-note"></span>
+          <span class="reglas-archivo">Solo archivos .STL · máximo 50 MB · la pieza debe medir entre 2 mm y 40 cm</span>
         </div>
         <input type="file" id="stlInput" accept=".stl" style="display:none">
         <div class="visor3d" id="visor3d" hidden>
@@ -408,7 +410,7 @@
   <div class="side-overlay" onclick="cerrarMenu()"></div>
 
   <main class="main">
-    <div class="topbar topbar-negocio"><button type="button" class="menu-btn" aria-label="Abrir menú" onclick="abrirMenu(this)"><svg class="ico" aria-hidden="true"><use href="#i-menu"/></svg></button><span class="topbar-title">Mi negocio</span></div>
+    <div class="topbar topbar-negocio"><button type="button" class="menu-btn" aria-label="Abrir menú" onclick="abrirMenu(this)"><svg class="ico" aria-hidden="true"><use href="#i-menu"/></svg></button><span class="topbar-title">Mi negocio</span><button type="button" class="btn-ayuda" onclick="abrirInstrucciones()" title="Ver instrucciones"><span class="btn-ayuda-q" aria-hidden="true">?</span><span class="btn-ayuda-lbl">Instrucciones</span></button></div>
     <!-- RESUMEN -->
     <div class="view active" id="n-resumen">
       <div class="header"><div><h2>Resumen del negocio</h2><p>Indicadores clave de este mes.</p></div><span class="pill">rol: negocio</span></div>

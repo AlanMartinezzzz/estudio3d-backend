@@ -30,7 +30,13 @@ const state = {
   lastQuote: null,
 };
 
-function toast(msg){
+// Mensajes que son un problema para el usuario -> aviso grande que se cierra a mano
+const PATRON_ERROR = /no se pudo|error|fall[oó]|sin conexi[oó]n|no hay conexi[oó]n|venci[oó]|expir|rechaz|no tienes|no coinciden|inv[aá]lid|incorrect/i;
+const PATRON_AVISO = /m[aá]xim|m[ií]nim|admite hasta|todav[ií]a no|a[uú]n no|inicia sesi[oó]n|no encontramos|no se encontr|no se puede|solo hay|ya no|no alcanza|ya est[aá]|ya estaba|actualizamos tu carrito|pesa m[aá]s|solo se aceptan|usa una foto|debe|escribe|ingresa|completa|elige|vac[ií]o|revisa|no tiene volumen|mide m[aá]s|mide menos|demasiad|supera|ya pediste|enviaste varios|espera|falta|primero|no est[aá] transmitiendo/i;
+
+function toast(msg, tipo){
+  if(!tipo){ tipo = PATRON_ERROR.test(msg) ? 'error' : (PATRON_AVISO.test(msg) ? 'aviso' : 'ok'); }
+  if(tipo === 'error' || tipo === 'aviso'){ alerta(msg, tipo); return; }
   let t = document.createElement('div');
   t.textContent = msg;
   t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#161616;border:2px solid #161616;color:#F6F6F4;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;font-family:Outfit,system-ui,sans-serif;max-width:calc(100vw - 32px);text-align:center;z-index:999;box-shadow:4px 4px 0 #FFC21A';
@@ -66,13 +72,13 @@ async function initSupabase() {
   try {
     const supabaseLib = window.supabase;
     if (!supabaseLib || typeof supabaseLib.createClient !== 'function') {
-      alert("Error: La librería de Supabase no se ha cargado en el HTML.");
+      alerta('La librería de Supabase no se cargó. Recarga la página.', 'error', 'No se pudo iniciar');
       return false;
     }
     const res = await fetch('/api/config');
     const config = await res.json();
     if (!config.supabaseUrl || !config.supabaseKey) {
-      alert("Error: Flask no devolvió credenciales válidas en /api/config");
+      alerta('El servidor no devolvió la configuración. Intenta más tarde.', 'error', 'No se pudo iniciar');
       return false;
     }
     supabase = supabaseLib.createClient(config.supabaseUrl, config.supabaseKey);
@@ -83,7 +89,7 @@ async function initSupabase() {
     return true;
   } catch (err) {
     console.error("Error al inicializar Supabase:", err);
-    alert("Error de conexión: " + err.message);
+    alerta('No se pudo conectar con el servidor: ' + err.message, 'error', 'Sin conexión');
     return false;
   }
 }
@@ -163,12 +169,14 @@ async function mostrarApp(role) {
     if (appNegocio) appNegocio.style.display = 'flex';
     await cargarNegocio();
     initNegocio();
+    iniciarAyuda('negocio');
   } else {
     if (appNegocio) appNegocio.style.display = 'none';
     if (appCliente) appCliente.style.display = 'flex';
     mostrarVistaInicial();
     await cargarCliente();
     initCliente();
+    iniciarAyuda('cliente');
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -182,6 +190,7 @@ function showView(app, viewId, btn) {
   const vista = document.getElementById(viewId);
   if (vista) vista.classList.add('active');
   if (btn) btn.classList.add('active');
+  setTimeout(() => ayudaDeSeccion(viewId), 350);   // primera visita a esta sección: recorrido corto
   // Al cambiar de sección se vuelve a leer la base para ver lo más reciente
   if (app === 'negocio') cargarBase().then(cargarNegocio).then(refrescarNegocio);
   else cargarBase().then(cargarCliente).then(refrescarCliente);
@@ -253,10 +262,10 @@ async function iniciarSesion() {
   if (!supabase) return;
   const email = (document.getElementById('login-email')?.value || '').trim();
   const password = (document.getElementById('login-pass')?.value || '').trim();
-  if (!email || !password) { alert("Ingresa tu correo y contraseña."); return; }
+  if (!email || !password) { alerta('Escribe tu correo y tu contraseña para entrar.', 'aviso', 'Faltan datos'); return; }
   try {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) alert("Error de inicio de sesión: " + error.message);
+    if (error) alerta(/invalid login/i.test(error.message) ? 'El correo o la contraseña no son correctos. Si no recuerdas tu contraseña, usa «¿Olvidaste tu contraseña?».' : error.message, 'error', 'No se pudo iniciar sesión');
     else mostrarApp(await obtenerRol());
   } catch (err) { console.error("Excepción al iniciar sesión:", err); }
 }
@@ -273,7 +282,7 @@ async function iniciarSesionGoogle() {
         queryParams: { prompt: 'select_account' }   // deja elegir la cuenta de Google
       }
     });
-    if (error) alert("Error al conectar con Google: " + error.message);
+    if (error) alerta(error.message, 'error', 'No se pudo conectar con Google');
   } catch (err) {
     console.error("Excepción con Google Auth:", err);
   }
@@ -303,7 +312,7 @@ async function enviarEnlaceRecuperacion() {
       toast('No se pudo enviar el correo. Intenta de nuevo más tarde.');
     } else {
       // Por seguridad se dice lo mismo exista o no la cuenta
-      toast('Si ese correo tiene cuenta, te llegará un enlace. Revisa también spam.');
+      alerta('Si ese correo tiene una cuenta, te llegará un enlace para crear una contraseña nueva. Revisa también la carpeta de spam.', 'ok', 'Revisa tu correo');
       toggleModoAuth('login');
     }
   } catch (err) {
@@ -379,14 +388,14 @@ async function registrarse() {
   const passInput = document.getElementById('login-pass');
   const email = emailInput ? emailInput.value.trim() : '';
   const password = passInput ? passInput.value.trim() : '';
-  if (!email || !password) { alert("Por favor completa todos los campos."); return; }
-  if (!esEmailValido(email)) { alert("El correo electrónico ingresado no tiene un formato válido."); emailInput.focus(); return; }
-  if (password.length < 6) { alert("La contraseña debe tener al menos 6 caracteres."); passInput.focus(); return; }
+  if (!email || !password) { alerta('Escribe tu correo y una contraseña para crear tu cuenta.', 'aviso', 'Faltan datos'); return; }
+  if (!esEmailValido(email)) { alerta('El correo no tiene un formato válido. Ejemplo: nombre@correo.com', 'aviso', 'Correo no válido'); emailInput.focus(); return; }
+  if (password.length < 6) { alerta('La contraseña debe tener al menos 6 caracteres.', 'aviso', 'Contraseña muy corta'); passInput.focus(); return; }
   try {
     const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) alert("Error al registrar: " + error.message);
-    else if (!data.session) { alert("Cuenta creada. Revisa tu correo para confirmarla y luego inicia sesión."); toggleModoAuth('login'); }
-    else { alert("¡Cuenta creada con éxito!"); mostrarApp('cliente'); }
+    if (error) alerta(/already registered/i.test(error.message) ? 'Ya existe una cuenta con ese correo. Inicia sesión o usa «¿Olvidaste tu contraseña?».' : error.message, 'error', 'No se pudo crear la cuenta');
+    else if (!data.session) { alerta('Revisa tu correo para confirmarla y luego inicia sesión.', 'ok', 'Cuenta creada'); toggleModoAuth('login'); }
+    else { toast('¡Cuenta creada con éxito!', 'ok'); mostrarApp('cliente'); }
   } catch (err) { console.error("Excepción al registrar:", err); }
 }
 
@@ -1080,7 +1089,7 @@ async function alElegirFoto(e){
   input.value = '';
   if(!file) return;
   if(['image/jpeg', 'image/png', 'image/webp'].indexOf(file.type) === -1){ toast('Usa una foto JPG, PNG o WebP'); return; }
-  if(file.size > MAX_FOTO_MB * 1024 * 1024){ toast(`La foto pesa más de ${MAX_FOTO_MB} MB`); return; }
+  if(file.size > MAX_FOTO_MB * 1024 * 1024){ alerta(`Tu foto pesa ${(file.size/1024/1024).toFixed(1)} MB y el máximo es ${MAX_FOTO_MB} MB.`, 'aviso', 'Foto demasiado grande'); return; }
   const cam = document.getElementById('pf-cam');
   try{
     if(typeof supabase === 'undefined' || !supabase){ toast('No hay conexión con la base de datos'); return; }
@@ -1370,9 +1379,15 @@ function ocultarResultado(){
 }
 
 function handleSTL(file) {
-  if(!file.name.toLowerCase().endsWith('.stl')){ toast('Solo se aceptan archivos .stl'); return; }
-  if(file.size === 0){ toast('El archivo está vacío.'); return; }
-  if(file.size > MAX_ARCHIVO_MB * 1024 * 1024){ toast(`El archivo pesa más de ${MAX_ARCHIVO_MB} MB. Redúcelo o contáctanos.`); return; }
+  const stlInput = document.getElementById('stlInput'); if(stlInput) stlInput.value = '';   // permite volver a elegir el mismo archivo
+  if(!file.name.toLowerCase().endsWith('.stl')){
+    alerta(`Elegiste «${file.name}». Solo se aceptan archivos .STL. Expórtalo como STL desde tu programa de diseño 3D.`, 'aviso', 'Formato no permitido'); return;
+  }
+  if(file.size === 0){ alerta(`«${file.name}» está vacío (0 MB). Vuelve a exportarlo desde tu programa de diseño.`, 'aviso', 'Archivo vacío'); return; }
+  if(file.size > MAX_ARCHIVO_MB * 1024 * 1024){
+    const mb = (file.size / 1024 / 1024).toFixed(1);
+    alerta(`Tu archivo pesa ${mb} MB y el máximo es ${MAX_ARCHIVO_MB} MB. Baja la resolución de la malla al exportar el STL o escríbenos en «Contactar negocio».`, 'aviso', 'Archivo demasiado grande'); return;
+  }
   archivoSeleccionado = file;
   state.lastQuote = null;
   ocultarVista3D();
@@ -1386,15 +1401,16 @@ function handleSTL(file) {
     try {
       const { volumeMm3, areaMm2: area, aLado, aArriba, aAbajo, tris, dims } = parseSTL(ev.target.result);
       if(!(volumeMm3 > 0)){
-        toast('El modelo no tiene volumen cerrado. Revisa el STL en tu programa de diseño.');
+        alerta('El modelo no tiene un volumen cerrado (tiene huecos), así que no se puede calcular el material. Repáralo en tu programa de diseño y vuelve a subirlo.', 'aviso', 'Modelo con huecos');
         document.getElementById('fileNameLabel').textContent = 'Archivo: ' + file.name;
         return;
       }
       const mayor = Math.max(...dims);
       if(mayor < MIN_MEDIDA_MM || mayor > MAX_MEDIDA_MM){
-        toast(mayor < MIN_MEDIDA_MM
-          ? `El modelo mide menos de ${MIN_MEDIDA_MM} mm: revisa que el STL esté en milímetros.`
-          : `El modelo mide más de ${MAX_MEDIDA_MM/10} cm, que es nuestro tamaño máximo. Revisa que esté en milímetros o contáctanos.`);
+        alerta(mayor < MIN_MEDIDA_MM
+          ? `Tu modelo mide ${mayor.toFixed(1)} mm en su lado más largo y el mínimo es ${MIN_MEDIDA_MM} mm. Revisa que el STL esté en milímetros.`
+          : `Tu modelo mide ${(mayor/10).toFixed(1)} cm en su lado más largo y el máximo es ${MAX_MEDIDA_MM/10} cm. Revisa que esté en milímetros o escríbenos.`,
+          'aviso', mayor < MIN_MEDIDA_MM ? 'Modelo demasiado pequeño' : 'Modelo demasiado grande');
         document.getElementById('fileNameLabel').textContent = 'Archivo rechazado: ' + file.name;
         archivoSeleccionado = null;
         return;
@@ -3222,3 +3238,319 @@ function cerrarEnVivo(){
   if(back && !back.hidden){ back.hidden = true; document.body.classList.remove('sin-scroll'); }
 }
 document.addEventListener('keydown', e => { if(e.key === 'Escape' && vivo) cerrarEnVivo(); });
+
+
+/* =====================================================================
+   AVISOS GRANDES
+   Errores y advertencias se muestran grandes, arriba y al centro, y se
+   quedan hasta que el usuario los cierra (botón «Entendido», la X o Esc).
+   ===================================================================== */
+const MAX_AVISOS = 3;
+
+function alerta(mensaje, tipo, titulo){
+  tipo = tipo || 'aviso';                                  // 'error' | 'aviso' | 'ok'
+  titulo = titulo || { error: 'Algo salió mal', aviso: 'Revisa esto antes de seguir', ok: 'Listo' }[tipo];
+  let caja = document.getElementById('avisos');
+  if(!caja){
+    caja = document.createElement('div');
+    caja.id = 'avisos';
+    document.body.appendChild(caja);
+  }
+  // El mismo aviso dos veces seguidas no se apila: solo se sacude el que ya está
+  const repetido = [...caja.children].find(a => a.dataset.msg === mensaje);
+  if(repetido){ repetido.classList.remove('sacudir'); void repetido.offsetWidth; repetido.classList.add('sacudir'); return; }
+  while(caja.children.length >= MAX_AVISOS) caja.firstElementChild.remove();
+
+  const a = document.createElement('div');
+  a.className = 'aviso aviso-' + tipo;
+  a.dataset.msg = mensaje;
+  a.setAttribute('role', tipo === 'ok' ? 'status' : 'alert');
+  a.innerHTML = `
+    <div class="aviso-ico" aria-hidden="true">${tipo === 'ok' ? '✓' : '!'}</div>
+    <div class="aviso-cuerpo">
+      <p class="aviso-titulo"></p>
+      <p class="aviso-texto"></p>
+      <button type="button" class="btn aviso-boton">Entendido</button>
+    </div>
+    <button type="button" class="aviso-x" aria-label="Cerrar aviso">×</button>`;
+  a.querySelector('.aviso-titulo').textContent = titulo;
+  a.querySelector('.aviso-texto').textContent = mensaje;
+  const cerrar = () => { a.classList.add('saliendo'); setTimeout(() => a.remove(), 180); };
+  a.querySelector('.aviso-boton').onclick = cerrar;
+  a.querySelector('.aviso-x').onclick = cerrar;
+  caja.appendChild(a);
+  a.querySelector('.aviso-boton').focus({ preventScroll: true });
+}
+
+document.addEventListener('keydown', e => {
+  if(e.key !== 'Escape') return;
+  const caja = document.getElementById('avisos');
+  if(caja && caja.lastElementChild){ caja.lastElementChild.querySelector('.aviso-x').click(); e.stopImmediatePropagation(); }
+}, true);
+
+
+/* =====================================================================
+   AYUDA: RECORRIDOS GUIADOS E INSTRUCCIONES
+   - La primera vez que alguien entra, ve un recorrido general.
+   - La primera vez que abre cada sección, ve un recorrido corto de esa sección.
+   - Ya vistos, no se repiten. El botón «Instrucciones» los vuelve a mostrar.
+   Lo visto se guarda en este navegador, por cuenta (localStorage).
+   ===================================================================== */
+const AYUDA = {
+  cliente: {
+    inicio: [
+      { titulo: '¡Bienvenido a Estudio 3D!', texto: 'Te mostramos en un minuto cómo funciona. Puedes saltar este recorrido y verlo cuando quieras con el botón «Instrucciones».' },
+      { sel: '#app-cliente [data-view="v-catalogo"]', titulo: 'Catálogo', texto: 'Productos listos del negocio. Elige color y cantidad y agrégalos a tu carrito.' },
+      { sel: '#app-cliente [data-view="v-cotizador"]', titulo: 'Cotizar archivo', texto: '¿Tienes tu propio diseño? Sube tu archivo .STL y te damos el precio al instante.' },
+      { sel: '#app-cliente [data-view="v-archivos"]', titulo: 'Mis archivos', texto: 'Tus piezas cotizadas y su estado. Cuando el negocio imprime tu pieza, aquí aparece el botón «En vivo» para verla por cámara.' },
+      { sel: '#app-cliente [data-view="v-carrito"]', titulo: 'Mi carrito', texto: 'Revisa lo que vas a pedir y confirma tu pedido.' },
+      { sel: '#app-cliente [data-view="v-pedidos"]', titulo: 'Mis pedidos', texto: 'Sigue el estado de cada pedido que hiciste.' },
+      { sel: '#app-cliente [data-view="v-contacto"]', titulo: 'Contactar negocio', texto: '¿Tienes dudas? Escríbele al negocio desde aquí.' },
+      { sel: '#app-cliente .userchip', titulo: 'Tu perfil', texto: 'Completa tu nombre, teléfono y dirección: se piden para guardar archivos y confirmar pedidos.' },
+      { sel: '#app-cliente .btn-ayuda', titulo: 'Instrucciones', texto: 'Si en algún momento no entiendes algo, toca aquí para ver la ayuda de la sección en la que estás.' },
+    ],
+    'v-catalogo': [
+      { sel: '#buscador', titulo: 'Buscar', texto: 'Escribe el nombre de un producto para encontrarlo rápido.' },
+      { sel: '#catalogoGrid', titulo: 'Productos', texto: 'Toca un producto para ver sus fotos, elegir color y cantidad, y agregarlo al carrito.' },
+    ],
+    'v-cotizador': [
+      { sel: '#dropzone', titulo: '1. Sube tu archivo', texto: 'Haz clic aquí o arrastra tu archivo. Reglas: solo archivos .STL, máximo 50 MB, y la pieza debe medir entre 2 mm y 40 cm.' },
+      { sel: '#q-material', titulo: '2. Material y color', texto: 'Elige el material y el color. Cada material tiene su propio precio.' },
+      { sel: '#q-infill', titulo: '3. Relleno', texto: 'Más relleno hace la pieza más resistente, pero usa más material y cuesta más.' },
+      { sel: '#q-cantidad', titulo: '4. Cantidad', texto: 'Cuántas piezas quieres, hasta 100 por cotización.' },
+      { titulo: '5. Guarda tu archivo', texto: 'Cuando veas el precio, toca «Guardar archivo». El negocio lo revisa y lo aprueba o te dice qué corregir.' },
+    ],
+    'v-archivos': [
+      { sel: '#tblArchivos', titulo: 'Tus archivos', texto: 'Cada fila es una pieza que cotizaste. Si está aprobada, ya puedes agregarla al carrito; si fue rechazada, verás el motivo.' },
+      { titulo: 'Ver tu pieza en vivo', texto: 'Cuando tu pieza se esté imprimiendo, aparece el botón rosado «En vivo» para verla por cámara.' },
+    ],
+    'v-carrito': [
+      { sel: '#cartLines', titulo: 'Tu carrito', texto: 'Aquí están los productos y piezas aprobadas que vas a pedir. Puedes cambiar cantidades o quitarlos.' },
+      { sel: '#app-cliente [onclick="confirmarPedido()"]', titulo: 'Confirmar pedido', texto: 'Envía tu pedido al negocio. Antes revisa que tu perfil tenga dirección y teléfono.' },
+    ],
+    'v-pedidos': [
+      { sel: '#tblPedidos', titulo: 'Tus pedidos', texto: 'Cada pedido con su total y su estado, que el negocio actualiza conforme avanza.' },
+    ],
+    'v-contacto': [
+      { sel: '#msg-asunto', titulo: 'Asunto', texto: 'Un título corto para tu mensaje: entre 3 y 100 caracteres.' },
+      { sel: '#msg-cuerpo', titulo: 'Mensaje', texto: 'Cuéntale al negocio qué necesitas: entre 10 y 1000 caracteres. El negocio lo recibe por correo.' },
+    ],
+  },
+  negocio: {
+    inicio: [
+      { titulo: 'Bienvenido a tu panel', texto: 'Te mostramos en un minuto cómo administrar tu negocio. Puedes saltar este recorrido y verlo cuando quieras con «Instrucciones».' },
+      { sel: '#app-negocio [data-view="n-resumen"]', titulo: 'Resumen', texto: 'Ventas, pedidos y filamento del mes de un vistazo.' },
+      { sel: '#app-negocio [data-view="n-productos"]', titulo: 'Productos', texto: 'Publica en el catálogo lo que vendes, con fotos, precio y peso.' },
+      { sel: '#app-negocio [data-view="n-precios"]', titulo: 'Precios y materiales', texto: 'Precio por gramo y por hora, materiales y colores: con esto se calculan las cotizaciones.' },
+      { sel: '#app-negocio [data-view="n-filamentos"]', titulo: 'Filamentos', texto: 'Tu inventario de filamento por material y color.' },
+      { sel: '#app-negocio [data-view="n-archivos"]', titulo: 'Archivos de clientes', texto: 'Revisa cada .STL que te mandan: descárgalo, apruébalo o recházalo con un motivo.' },
+      { sel: '#app-negocio [data-view="n-carritos"]', titulo: 'Carritos', texto: 'Los pedidos de tus clientes y su estado.' },
+      { sel: '#app-negocio [data-view="n-camaras"]', titulo: 'Cámaras', texto: 'Asigna a cada cámara la pieza que imprime: su dueño la ve en vivo.' },
+      { sel: '#app-negocio .btn-ayuda', titulo: 'Instrucciones', texto: 'Si en algún momento tienes dudas, toca aquí para ver la ayuda de la sección en la que estás.' },
+    ],
+    'n-resumen': [
+      { sel: '#kpiRow', titulo: 'Indicadores', texto: 'Los números principales de tu negocio en este mes.' },
+      { sel: '#filamentoList', titulo: 'Filamento disponible', texto: 'Cuánto te queda de cada filamento, para que sepas cuándo comprar más.' },
+    ],
+    'n-productos': [
+      { sel: '#np-nombre', titulo: 'Nuevo producto', texto: 'Llena nombre, descripción, precio, filamento y peso. Puedes agregar hasta 8 fotos de máximo 5 MB cada una.' },
+      { sel: '#tblProductosNegocio', titulo: 'Tus productos', texto: 'Lo que ya está publicado en el catálogo. Desde aquí cambias fotos, peso o lo quitas.' },
+    ],
+    'n-precios': [
+      { sel: '#np-gramo', titulo: 'Tarifas', texto: 'El precio por gramo de material y por hora de impresión. El cotizador las usa para calcular cada precio.' },
+      { sel: '#nm-nombre', titulo: 'Materiales', texto: 'Cada material lleva un multiplicador: 1 es el precio normal y 1.5 lo hace 50 % más caro.' },
+      { sel: '#nc-nombre', titulo: 'Colores', texto: 'Los colores que el cliente puede elegir.' },
+    ],
+    'n-filamentos': [
+      { sel: '#nf-material', titulo: 'Agregar filamento', texto: 'Registra cada carrete con su material, color, gramos y costo.' },
+      { sel: '#tblFilamentos', titulo: 'Inventario', texto: 'El filamento se descuenta solo cuando apruebas archivos y pedidos.' },
+    ],
+    'n-archivos': [
+      { sel: '#tblArchivosNegocio', titulo: 'Archivos por revisar', texto: 'Descarga el STL o míralo en 3D, y apruébalo o recházalo con un motivo. Al aprobar se descuenta el filamento.' },
+    ],
+    'n-carritos': [
+      { sel: '#tblCarritosNegocio', titulo: 'Pedidos', texto: 'Cambia el estado de cada pedido conforme avanza para que el cliente lo vea.' },
+    ],
+    'n-camaras': [
+      { sel: '#ncam-nombre', titulo: 'Registrar cámara', texto: 'Dale un nombre. El ID que aparece en su tarjeta es el que va en el programa del taller.' },
+      { sel: '#camsGrid', titulo: 'Tus cámaras', texto: 'Elige qué pieza vigila cada una. «● Transmitiendo» indica que la cámara del taller está enviando imagen.' },
+    ],
+  },
+};
+
+let ayudaRol = null, ayudaUid = 'anon', recorrido = null;
+
+function claveAyuda(id){ return `e3d-ayuda:${ayudaUid}:${ayudaRol}:${id}`; }
+function yaVisto(id){ try { return localStorage.getItem(claveAyuda(id)) === '1'; } catch(e){ return false; } }
+function marcarVisto(id){ try { localStorage.setItem(claveAyuda(id), '1'); } catch(e){} }
+
+function seccionActiva(){
+  const app = document.getElementById(ayudaRol === 'negocio' ? 'app-negocio' : 'app-cliente');
+  const v = app && app.querySelector('.view.active');
+  return v ? v.id : null;
+}
+
+async function iniciarAyuda(rol){
+  ayudaRol = rol;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if(session) ayudaUid = session.user.id;
+  } catch(e){}
+  setTimeout(() => {
+    if(!yaVisto('inicio')) empezarRecorrido('inicio', () => ayudaDeSeccion(seccionActiva()));
+    else ayudaDeSeccion(seccionActiva());
+  }, 700);
+}
+
+function ayudaDeSeccion(viewId){
+  if(!ayudaRol || !viewId || recorrido) return;
+  if(!yaVisto('inicio')) return;                           // primero el recorrido general
+  if(AYUDA[ayudaRol][viewId] && !yaVisto(viewId)) empezarRecorrido(viewId);
+}
+
+function empezarRecorrido(id, alTerminar){
+  const pasos = (AYUDA[ayudaRol] || {})[id];
+  if(!pasos || !pasos.length) return;
+  cerrarRecorrido(false);
+  recorrido = { id, pasos, i: 0, alTerminar };
+  const capa = document.createElement('div');
+  capa.id = 'tour';
+  capa.innerHTML = `
+    <div class="tour-foco"></div>
+    <div class="tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-titulo">
+      <p class="tour-paso"></p>
+      <h3 id="tour-titulo"></h3>
+      <p class="tour-texto"></p>
+      <div class="tour-botones">
+        <button type="button" class="btn btn-ghost tour-saltar">Saltar</button>
+        <span class="tour-esp"></span>
+        <button type="button" class="btn tour-atras">Anterior</button>
+        <button type="button" class="btn btn-primary tour-sig">Siguiente</button>
+      </div>
+    </div>`;
+  document.body.appendChild(capa);
+  capa.querySelector('.tour-saltar').onclick = () => cerrarRecorrido(true);
+  capa.querySelector('.tour-atras').onclick = () => irAPaso(recorrido.i - 1);
+  capa.querySelector('.tour-sig').onclick = () => {
+    if(recorrido.i >= recorrido.pasos.length - 1) cerrarRecorrido(true);
+    else irAPaso(recorrido.i + 1);
+  };
+  window.addEventListener('resize', ubicarPaso);
+  window.addEventListener('scroll', ubicarPaso, true);
+  irAPaso(0);
+}
+
+function objetivoVisible(sel){
+  if(!sel) return null;
+  const el = document.querySelector(sel);
+  if(!el) return null;
+  const r = el.getBoundingClientRect();
+  if(r.width < 4 || r.height < 4) return null;           // oculto (por ejemplo el menú cerrado en celular)
+  if(getComputedStyle(el).visibility === 'hidden') return null;
+  return el;
+}
+
+function irAPaso(i){
+  if(!recorrido) return;
+  recorrido.i = Math.max(0, Math.min(i, recorrido.pasos.length - 1));
+  const p = recorrido.pasos[recorrido.i];
+  const capa = document.getElementById('tour');
+  capa.querySelector('.tour-paso').textContent = `Paso ${recorrido.i + 1} de ${recorrido.pasos.length}`;
+  capa.querySelector('#tour-titulo').textContent = p.titulo;
+  capa.querySelector('.tour-texto').textContent = p.texto;
+  capa.querySelector('.tour-atras').style.visibility = recorrido.i === 0 ? 'hidden' : 'visible';
+  capa.querySelector('.tour-sig').textContent = recorrido.i === recorrido.pasos.length - 1 ? 'Entendido' : 'Siguiente';
+  const el = objetivoVisible(p.sel);
+  if(el) el.scrollIntoView({ block: 'center' });
+  ubicarPaso();
+  capa.querySelector('.tour-sig').focus({ preventScroll: true });
+}
+
+function ubicarPaso(){
+  const capa = document.getElementById('tour');
+  if(!capa || !recorrido) return;
+  const foco = capa.querySelector('.tour-foco'), card = capa.querySelector('.tour-card');
+  const el = objetivoVisible(recorrido.pasos[recorrido.i].sel);
+  const vw = window.innerWidth, vh = window.innerHeight, m = 16;
+  if(!el){
+    capa.classList.add('sin-objetivo');
+    card.style.left = Math.max(m, (vw - card.offsetWidth) / 2) + 'px';
+    card.style.top = Math.max(m, (vh - card.offsetHeight) / 2) + 'px';
+    return;
+  }
+  capa.classList.remove('sin-objetivo');
+  const r = el.getBoundingClientRect(), pad = 8;
+  foco.style.left = (r.left - pad) + 'px';
+  foco.style.top = (r.top - pad) + 'px';
+  foco.style.width = (r.width + pad * 2) + 'px';
+  foco.style.height = (r.height + pad * 2) + 'px';
+  // La tarjeta va a la derecha del elemento si cabe (menú lateral), si no abajo o arriba
+  const cw = card.offsetWidth, ch = card.offsetHeight;
+  let left, top;
+  if(r.right + pad + 16 + cw <= vw - m && r.width < vw / 3){
+    left = r.right + pad + 16; top = r.top + r.height / 2 - ch / 2;
+  } else if(r.bottom + pad + 16 + ch <= vh - m){
+    left = r.left; top = r.bottom + pad + 16;
+  } else {
+    left = r.left; top = r.top - pad - 16 - ch;
+  }
+  card.style.left = Math.min(Math.max(m, left), vw - cw - m) + 'px';
+  card.style.top = Math.min(Math.max(m, top), vh - ch - m) + 'px';
+}
+
+function cerrarRecorrido(marcar){
+  if(!recorrido) return;
+  const { id, alTerminar } = recorrido;
+  recorrido = null;
+  const capa = document.getElementById('tour');
+  if(capa) capa.remove();
+  window.removeEventListener('resize', ubicarPaso);
+  window.removeEventListener('scroll', ubicarPaso, true);
+  if(marcar){ marcarVisto(id); if(alTerminar) alTerminar(); }
+}
+
+document.addEventListener('keydown', e => {
+  if(!recorrido) return;
+  if(e.key === 'Escape') cerrarRecorrido(true);
+  else if(e.key === 'ArrowRight') document.querySelector('#tour .tour-sig').click();
+  else if(e.key === 'ArrowLeft' && recorrido.i > 0) irAPaso(recorrido.i - 1);
+});
+
+// Botón «Instrucciones»: ayuda de la sección actual, recorrido general o reiniciar
+function abrirInstrucciones(){
+  if(!ayudaRol) return;
+  const id = seccionActiva();
+  const tieneSeccion = !!(AYUDA[ayudaRol][id]);
+  const nombre = (document.querySelector(`#${id} .header h2`) || {}).textContent || 'esta sección';
+  let m = document.getElementById('ayuda-menu');
+  if(m) m.remove();
+  m = document.createElement('div');
+  m.id = 'ayuda-menu';
+  m.className = 'modal-back';
+  m.innerHTML = `
+    <div class="modal-win ayuda-win" role="dialog" aria-modal="true" aria-labelledby="ayuda-titulo">
+      <div class="modal-body">
+        <h2 id="ayuda-titulo">Instrucciones</h2>
+        <p class="auth-ayuda">¿Qué quieres repasar?</p>
+        ${tieneSeccion ? `<button type="button" class="btn btn-primary" data-op="seccion">Cómo usar «${nombre.replace(/[<>&"]/g, '')}»</button>` : ''}
+        <button type="button" class="btn" data-op="general">Recorrido general de la app</button>
+        <button type="button" class="btn btn-ghost" data-op="reiniciar">Volver a mostrar todas las ayudas</button>
+        <button type="button" class="btn btn-ghost" data-op="cerrar">Cerrar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click', e => {
+    const op = e.target.dataset && e.target.dataset.op;
+    if(e.target === m || op === 'cerrar'){ m.remove(); return; }
+    if(!op) return;
+    m.remove();
+    if(op === 'seccion') empezarRecorrido(id);
+    else if(op === 'general') empezarRecorrido('inicio');
+    else if(op === 'reiniciar'){
+      try { Object.keys(localStorage).filter(k => k.startsWith(`e3d-ayuda:${ayudaUid}:${ayudaRol}:`)).forEach(k => localStorage.removeItem(k)); } catch(err){}
+      toast('Listo: verás de nuevo la ayuda en cada sección.', 'ok');
+      empezarRecorrido('inicio', () => ayudaDeSeccion(seccionActiva()));
+    }
+  });
+  const primero = m.querySelector('.btn'); if(primero) primero.focus();
+}
