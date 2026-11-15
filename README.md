@@ -190,6 +190,7 @@ La app ahora guía a quien entra por primera vez y muestra los errores en avisos
 
 **Avisos grandes**
 
+
 | Tipo | Cuándo sale | Cómo se ve |
 | --- | --- | --- |
 | Error | Algo falló: conexión, sesión vencida, no se pudo guardar | Aviso grande rosa, «Algo salió mal», se cierra a mano |
