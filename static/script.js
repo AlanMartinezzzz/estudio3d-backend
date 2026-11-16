@@ -672,8 +672,8 @@ function initCliente(){
 
 // ---------- REGLAS Y RESTRICCIONES ----------
 const MAX_ARCHIVO_MB = 50;      
-const MIN_MEDIDA_MM  = 2;       
-const MAX_MEDIDA_MM  = 400;     
+const MIN_VOLUMEN_CM3 = 1;     // volumen mínimo de la pieza
+const MAX_VOLUMEN_CM3 = 24;    // volumen máximo de la pieza
 const MAX_CANTIDAD   = 100;     
 
 const CIUDADES_ENVIO = [
@@ -1405,12 +1405,13 @@ function handleSTL(file) {
         document.getElementById('fileNameLabel').textContent = 'Archivo: ' + file.name;
         return;
       }
-      const mayor = Math.max(...dims);
-      if(mayor < MIN_MEDIDA_MM || mayor > MAX_MEDIDA_MM){
-        alerta(mayor < MIN_MEDIDA_MM
-          ? `Tu modelo mide ${mayor.toFixed(1)} mm en su lado más largo y el mínimo es ${MIN_MEDIDA_MM} mm. Revisa que el STL esté en milímetros.`
-          : `Tu modelo mide ${(mayor/10).toFixed(1)} cm en su lado más largo y el máximo es ${MAX_MEDIDA_MM/10} cm. Revisa que esté en milímetros o escríbenos.`,
-          'aviso', mayor < MIN_MEDIDA_MM ? 'Modelo demasiado pequeño' : 'Modelo demasiado grande');
+      const volumenCm3 = volumeMm3 / 1000;
+      if(volumenCm3 < MIN_VOLUMEN_CM3 || volumenCm3 > MAX_VOLUMEN_CM3){
+        const chico = volumenCm3 < MIN_VOLUMEN_CM3;
+        alerta(chico
+          ? `Tu modelo tiene ${volumenCm3.toFixed(2)} cm³ de volumen y el mínimo es ${MIN_VOLUMEN_CM3} cm³. Revisa que el STL esté en milímetros.`
+          : `Tu modelo tiene ${volumenCm3.toFixed(1)} cm³ de volumen y el máximo es ${MAX_VOLUMEN_CM3} cm³. Revisa que esté en milímetros o escríbenos.`,
+          'aviso', chico ? 'Modelo demasiado pequeño' : 'Modelo demasiado grande');
         document.getElementById('fileNameLabel').textContent = 'Archivo rechazado: ' + file.name;
         archivoSeleccionado = null;
         return;
@@ -3314,7 +3315,7 @@ const AYUDA = {
       { sel: '#catalogoGrid', titulo: 'Productos', texto: 'Toca un producto para ver sus fotos, elegir color y cantidad, y agregarlo al carrito.' },
     ],
     'v-cotizador': [
-      { sel: '#dropzone', titulo: '1. Sube tu archivo', texto: 'Haz clic aquí o arrastra tu archivo. Reglas: solo archivos .STL, máximo 50 MB, y la pieza debe medir entre 2 mm y 40 cm.' },
+      { sel: '#dropzone', titulo: '1. Sube tu archivo', texto: 'Haz clic aquí o arrastra tu archivo. Reglas: solo archivos .STL, máximo 50 MB, y el volumen de la pieza debe estar entre 1 cm³ y 24 cm³.' },
       { sel: '#q-material', titulo: '2. Material y color', texto: 'Elige el material y el color. Cada material tiene su propio precio.' },
       { sel: '#q-infill', titulo: '3. Relleno', texto: 'Más relleno hace la pieza más resistente, pero usa más material y cuesta más.' },
       { sel: '#q-cantidad', titulo: '4. Cantidad', texto: 'Cuántas piezas quieres, hasta 100 por cotización.' },
