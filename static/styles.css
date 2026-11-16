@@ -922,3 +922,8 @@ body.sin-scroll{overflow:hidden;}
 
 /* Reglas del archivo bajo la zona de carga */
 .reglas-archivo{display:inline-block; margin-top:12px; padding:5px 12px; border:2px solid var(--stroke); border-radius:999px; background:var(--card); color:var(--ink); font-size:13px; font-weight:700;}
+/* Restricciones de impresión en la pantalla inicial */
+.reglas-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:22px;}
+.regla-card{background:#FFF6D6;}
+.regla-card .icon{background:var(--gold); color:var(--on-accent); border:var(--border);}
+.regla-card:nth-child(2) .icon{background:var(--pink);}
